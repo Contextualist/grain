@@ -98,9 +98,9 @@ async def relay(inq):
                 outqs[g] = outq_or_rslt # init outq
             else:
                 outqs[g].send_nowait((i, outq_or_rslt))
-async def boot_combine(frames, waddrs, rpw):
+async def boot_combine(frames, args, kwargs):
     async with trio.open_nursery() as _n, \
-               GrainExecutor(waddrs, rpw, _n) as exer, \
+               GrainExecutor(_n=_n, *args, **kwargs) as exer, \
                exer.push_result.clone() as push_newgroup:
         _n.start_soon(relay, exer.resultq)
         with CombineGroup_ctxt(exer, push_newgroup):
@@ -111,5 +111,5 @@ async def boot_combine(frames, waddrs, rpw):
             else:
                 await frames()
 
-def run_combine(frames, waddrs, rpw):
-    trio.run(boot_combine, frames, waddrs, rpw)
+def run_combine(frames, *args, **kwargs):
+    trio.run(boot_combine, frames, args, kwargs)

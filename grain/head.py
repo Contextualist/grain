@@ -7,6 +7,7 @@ import random
 from math import inf as INFIN
 
 from .util import timeblock
+from .resource import ZERO
 
 class GrainRemote(object):
     def __init__(self, addr, res):
@@ -39,11 +40,12 @@ class GrainExecutor(object):
     sync: TODO
     async: TODO
     """
-    def __init__(self, waddrs, rpw, _n=None):
+    def __init__(self, waddrs, rpw, _n=None, nolocal=False):
         self.push_job, self.pull_job = trio.open_memory_channel(INFIN)
         self.push_result, self.resultq = trio.open_memory_channel(INFIN)
         self.results = []
-        self.pool = [GrainPseudoRemote(deepcopy(rpw))] + [GrainRemote(a, deepcopy(rpw)) for a in waddrs]
+        self.pool = [GrainPseudoRemote(deepcopy(rpw if not nolocal else ZERO))] + \
+                    [GrainRemote(a, deepcopy(rpw)) for a in waddrs]
         self.hold = {}
         self.cond_res = trio.Condition()
         self._n = _n
