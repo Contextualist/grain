@@ -4,8 +4,12 @@ import dill as pickle
 
 from functools import partial
 import traceback
+import socket
 
-async def exerf(tid, func):
+from .contextvar import GVAR
+
+async def exerf(tid, res, func):
+    GVAR.res = res
     try:
         r = await func()
     except BaseException:
@@ -21,10 +25,11 @@ async def grain_worker():
                 print("received FIN from head, worker exits")
                 _n.cancel_scope.cancel()
                 break
-            tid, fn, args, kwargs = pickle.loads(msg)
-            _n.start_soon(exerf, tid, partial(fn, *args, **kwargs))
+            tid, res, fn, args, kwargs = pickle.loads(msg)
+            _n.start_soon(exerf, tid, res, partial(fn, *args, **kwargs))
 
 if __name__ == "__main__":
+    GVAR.instance = socket.gethostname()
     rep = Pair0(listen="tcp://0.0.0.0:4242")
     print("worker launched")
     trio.run(grain_worker)

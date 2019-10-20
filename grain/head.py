@@ -3,10 +3,10 @@ from pynng import Pair0
 import dill as pickle
 
 from copy import deepcopy
-import random
 from math import inf as INFIN
 
 from .util import timeblock
+from .contextvar import GVAR
 from .resource import ZERO
 
 class GrainRemote(object):
@@ -14,8 +14,8 @@ class GrainRemote(object):
         self._c = Pair0(dial=f"tcp://{addr}:4242")
         self.res = res
         self.name = addr
-    async def execf(self, tid, fn, *args, **kwargs):
-        await self._c.asend(pickle.dumps((tid, fn, args, kwargs)))
+    async def execf(self, tid, res, fn, args, kwargs):
+        await self._c.asend(pickle.dumps((tid, res, fn, args, kwargs)))
         tid2, r2 = pickle.loads(await self._c.arecv()) # Not neccessary the matching response
         if tid2 == -1:
             print(f"Remote {self.name}'s task {r2[0]!r} failed with exception:\n{r2[1]}")
@@ -25,11 +25,13 @@ class GrainRemote(object):
         await self._c.asend(b"FIN")
         self._c.close()
 
+GVAR.instance = "local"
 class GrainPseudoRemote(object):
     def __init__(self, res):
         self.res = res
         self.name = "local"
-    async def execf(self, tid, fn, *args, **kwargs):
+    async def execf(self, tid, res, fn, args, kwargs):
+        GVAR.res = res
         return tid, await fn(*args, **kwargs)
     async def done(self):
         pass
@@ -63,7 +65,7 @@ class GrainExecutor(object):
                 await self.cond_res.wait()
     async def __task_with_res(self, tid, res, w, fn, args, kwargs):
         self.hold[tid] = res
-        tid2, r2 = await w.execf(tid, fn, grain_res=res, *args, **kwargs) # Not neccessary the matching response
+        tid2, r2 = await w.execf(tid, res, fn, args, kwargs) # Not neccessary the matching response
         async with self.cond_res:
             w.res.dealloc(self.hold.pop(tid2))
             self.cond_res.notify()

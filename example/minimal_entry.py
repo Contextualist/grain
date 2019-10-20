@@ -27,7 +27,7 @@ i.e. i: parallel, j: sequential, a/b: parallel
 """
 
 import trio
-from grain import run_combine, open_waitgroup, Node
+from grain import run_combine, open_waitgroup, Node, GVAR
 
 from functools import partial
 
@@ -35,12 +35,13 @@ from functools import partial
 # jobs are scheduled and sent to workers, local or
 # remote, and their results are finally aggregated 
 # and sent back to their waitgroup.
-# `grain_res` is provided by the executor. It is the
-# allocated resorce for the current job.
-# In this demo, we are not actually using them.
-async def job(x, grain_res):
+# `GVAR` contains the specific context information
+# for the current job. `GVAR.res` is the resources
+# allocated to the current job, but in this demo,
+# we are not actually using them.
+async def job(x):
     import random
-    print(f"job {x} with {grain_res} starts")
+    print(f"job {x} with {GVAR.res} starts")
     t = random.randint(1,3)
     await trio.sleep(t)
     print(f"job {x} ends after {t}s")

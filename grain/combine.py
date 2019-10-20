@@ -20,10 +20,6 @@ async def exec1(res, fn, *args, **kwargs):
 async def _grouped_task(gid, fn, *args, **kwargs):
     r = await fn(*args, **kwargs)
     return gid, r
-async def _subtask(gid, fn, *args, **kwargs):
-    del kwargs['grain_res']
-    r = await fn(*args, **kwargs)
-    return gid, r
 
 CombineGroup, Exec1 = None, None
 @contextmanager
@@ -49,7 +45,7 @@ def CombineGroup_ctxt(exer, push_newgroup):
             self.counter += 1
         def start_subtask(self, fn, *args, **kwargs):
             # tasks requesting zero resource would be executed locally
-            exer.submit(ZERO, _subtask, self.gid, fn, *args, **kwargs)
+            exer.submit(ZERO, _grouped_task, self.gid, fn, *args, **kwargs)
             self.counter += 1
         async def __aenter__(self): # async part of __init__
             if self.counter > 0:
