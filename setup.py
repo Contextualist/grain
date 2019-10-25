@@ -13,12 +13,15 @@ setuptools.setup(
     long_description_content_type="text/markdown",
     url="https://github.iu.edu/zhanghar/grain",
     packages=setuptools.find_packages(),
+    python_requires=">=3.6",
     install_requires=[
         "trio",
         "pynng",
         "dill",
     ],
-    python_requires=">=3.6",
+    tests_require = [
+        "pytest",
+    ],
     classifiers=[
         "Development Status :: 3 - Alpha",
         "Framework :: Trio",

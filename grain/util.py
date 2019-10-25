@@ -10,7 +10,7 @@ def timeblock(text="this block", enter=False):
             self.st = timer()
             return self
         def __exit__(self, *exc):
-            print(f"Time elapsed for {text}: {timer()-self.st}")
+            print(f"Time elapsed for {text}{' (incomplete)' if any(exc) else ''}: {timer()-self.st}")
             return False
     return TimeblockCtx()
 
@@ -33,3 +33,34 @@ def aretry(attempts=3, dropafter=180, errtype=Exception, silent=False, kwargs1=N
             if err: raise RuntimeError("No more retries") from err
         return __aretry
     return __wrapper
+
+
+from trio.hazmat import ParkingLot, checkpoint, enable_ki_protection
+
+class WaitGroup(object):
+
+    def __init__(self, debug=False):
+        self._counter = 0
+        self._lot = ParkingLot()
+        self._d = debug
+
+    def add(self):
+        self._counter += 1
+        if self._d: print("enter", self._counter)
+
+    @enable_ki_protection
+    def done(self, *exc):
+        if self._d: print("exit ", self._counter)
+        self._counter -= 1
+        if self._counter == 0:
+            self._lot.unpark_all()
+        return False
+
+    __enter__ = add
+    __exit__ = done
+
+    async def wait(self):
+        if self._counter == 0:
+            await checkpoint()
+        else:
+            await self._lot.park()

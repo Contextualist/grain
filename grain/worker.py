@@ -12,8 +12,9 @@ async def exerf(tid, res, func):
     GVAR.res = res
     try:
         r = await func()
-    except BaseException:
-        tid, r = -1, (func, traceback.format_exc())
+    except BaseException as e:
+        if type(e) is trio.Cancelled: e = "trio.Cancelled"
+        tid, r = -tid, (func, traceback.format_exc(), e) # negative tid for failure
     finally:
         await rep.asend(pickle.dumps((tid, r)))
 

@@ -1,11 +1,20 @@
 class Resource(object):
+    """Return true if it is possible to alloc(res)
+    """
     def _request(self, res):
-        pass # return true if it is possible to alloc(res)
+        pass
+    """Return allocated resources. Allocated resources
+    should also be able to be used as request resources (i.e.
+    `B.request(A.alloc(some_res))`), but vice versa does not
+    necessary need to be true.
+    """
     def _alloc(self, res):
-        pass # return allocated resources
+        pass
     def _dealloc(self, res):
         pass
-    def _repr(self): # __repr__, without overriding others'
+    """__repr__, for concatenating with other resources
+    """
+    def _repr(self):
         pass
 
     def __init__(self, init=True):
