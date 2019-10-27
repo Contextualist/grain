@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="grain",
-    version="0.6.2",
+    version="0.8.0",
     author="Harry Zhang",
     author_email="zhanghar@iu.edu",
     description="A scheduler for resource-aware parallel computing on clusters.",
@@ -16,7 +16,6 @@ setuptools.setup(
     python_requires=">=3.6",
     install_requires=[
         "trio",
-        "pynng",
         "dill",
     ],
     tests_require = [

@@ -1,5 +1,4 @@
 import trio
-from pynng import Pair0
 import dill as pickle
 
 from copy import deepcopy
@@ -10,26 +9,29 @@ import traceback
 from .contextvar import GVAR
 from .util import timeblock, WaitGroup
 from .resource import ZERO
+from .pair import SocketChannel
 
 FULL_HEALTH = 3
 
 class GrainRemote(object):
     def __init__(self, addr, res):
-        self._c = Pair0(dial=f"tcp://{addr}:4242")
+        self._c = None
         self.res = res
         self.name = addr
         self.health = FULL_HEALTH
         self.wg = WaitGroup()
+    async def connect(self, _n):
+        self._c = await (SocketChannel(f"{self.name}:4242", dial=True, _n=_n)).__aenter__()
     async def execf(self, tid, res, fn, args, kwargs):
         with self.wg:
-            await self._c.asend(pickle.dumps((tid, res, fn, args, kwargs)))
-            tid2, r2 = pickle.loads(await self._c.arecv()) # Not neccessary the matching response
+            await self._c.send(pickle.dumps((tid, res, fn, args, kwargs)))
+            tid2, r2 = pickle.loads(await self._c.receive()) # Not neccessary the matching response
             if tid2 > 0: self.health = FULL_HEALTH
             return tid2, r2
     async def aclose(self):
-        await self._c.asend(b"FIN")
+        await self._c.send(b"FIN")
         await self.wg.wait()
-        self._c.close()
+        await self._c.aclose()
 
 GVAR.instance = "local"
 class GrainPseudoRemote(object):
@@ -39,6 +41,8 @@ class GrainPseudoRemote(object):
         self.health = FULL_HEALTH
         self.wg = WaitGroup()
         self.cg = []
+    async def connect(self, _n):
+        pass
     async def execf(self, tid, res, fn, args, kwargs):
         cs = trio.CancelScope()
         self.cg.append(cs)
@@ -126,12 +130,15 @@ class GrainExecutor(object):
             self._wg.done()
 
     async def register(self, w):
+        await w.connect(self._n)
         async with self.cond_res:
             self.pool.append(w)
             self.cond_res.notify()
     async def unregister(self, name):
         async with self.cond_res:
-            i,w = next((i,x) for i,x in enumerate(self.pool) if x.name==name) # expect one and only name
+            # expect one and only name
+            i,w = next(((i,x) for i,x in enumerate(self.pool) if x.name==name), (0,0))
+            if not i: return
             self.pool.pop(i)
             await w.aclose() # notify exit and reschedule pending jobs
             if not self.persistent:
@@ -142,7 +149,8 @@ class GrainExecutor(object):
         await self.push_job.aclose()
 
     async def run(self):
-        #await trio.sleep(3) # wait for workers TODO
+        for w in self.pool:
+            await w.connect(self._n)
         try:
             with timeblock("all jobs"):
                 async with trio.open_nursery() as _n, self.pull_job:

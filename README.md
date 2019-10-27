@@ -1,6 +1,6 @@
 # Grain
 
-A scheduler built with `trio` and `pynng` for resource-aware parallel computing on clusters.
+A scheduler built with `trio` for resource-aware parallel computing on clusters.
 
 ### TL;DR
 
@@ -43,13 +43,13 @@ Check out [example](example) for complete demos / more patterns and a PBS script
 
 Every job in the job queue has a resource request infomation along with the job to run. Before the executor run each job, it queries each worker for resource availability. If resource is insufficient, the job queue is suspended until completed jobs return resources. Resources can be CPU cores, virtual memory, both, (or anything user defined following interface `grain.resource.Resource`).
 
-Every job function submitted should have a signature like `fn(..., *, grain_res)`, where `grain_res` is the specific resource dedicated to the job. (e.g. if a job is submitted with `CPU(3)`, asking for 3 cores, it might receive allocation like `CPU([6,7,9])`.)
+Every time a job function runs, it has access to `grain.GVAR.res`, a [context-local variable](https://trio.readthedocs.io/en/stable/reference-core.html#task-local-storage) giving the information of specific resource dedicated to the job. (e.g. if a job is submitted with `CPU(3)`, asking for 3 cores, it might receive allocation like `CPU([6,7,9])`.)
 
 ### Executor, Workers and communication
 
 The top-level APIs (i.e. "combine") are built upon an [executor](https://docs.python.org/3/library/concurrent.futures.html#concurrent.futures.Executor)-like backend called `grain.GrainExecutor`. It schedules and dispatches jobs to workers, and it maintains a single job queue and a result queue. The executor usually runs on the head node in a cluster.
 
-Workers, one per node, simply receive async functions (i.e. jobs) from the executor and run them. [`pynng`](https://pynng.readthedocs.io/en/latest/) provides reliable socket communication, and [`dill`](https://dill.readthedocs.io/en/latest/) serializes the functions to byte payloads.
+Workers, one per node, simply receive async functions (i.e. jobs) from the executor and run them. Executor and workers use socket for communication, and [`dill`](https://dill.readthedocs.io/en/latest/) serializes the functions to byte payloads.
 
 ### Acknowledgement
 
