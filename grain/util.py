@@ -39,18 +39,15 @@ from trio.hazmat import ParkingLot, checkpoint, enable_ki_protection
 
 class WaitGroup(object):
 
-    def __init__(self, debug=False):
+    def __init__(self):
         self._counter = 0
         self._lot = ParkingLot()
-        self._d = debug
 
     def add(self):
         self._counter += 1
-        if self._d: print("enter", self._counter)
 
     @enable_ki_protection
     def done(self, *exc):
-        if self._d: print("exit ", self._counter)
         self._counter -= 1
         if self._counter == 0:
             self._lot.unpark_all()
@@ -64,3 +61,9 @@ class WaitGroup(object):
             await checkpoint()
         else:
             await self._lot.park()
+
+class nullacontext(object):
+    async def __aenter__(self):
+        return self
+    async def __aexit__(self, *exc):
+        return False

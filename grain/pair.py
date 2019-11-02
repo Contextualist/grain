@@ -4,6 +4,8 @@ from math import inf as INFIN
 from functools import partial
 import struct
 
+from .util import nullacontext
+
 async def notify(addr, msg): # TODO: retry until connected
     """Open a connection, send `msg`, then close the
     connection immediately.
@@ -109,9 +111,3 @@ def parse_addr(host_port):
     host, port = host_port.split(':')
     if not host: host = "0.0.0.0"
     return host, int(port)
-
-class nullacontext(object):
-    async def __aenter__(self):
-        return self
-    async def __aexit__(self, *exc):
-        return False
