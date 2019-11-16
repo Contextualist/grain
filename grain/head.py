@@ -20,19 +20,40 @@ class GrainRemote(object):
         self.name = addr
         self.health = FULL_HEALTH
         self.wg = WaitGroup()
+        self.resultq = {}
+    async def _loop(self, task_status=trio.TASK_STATUS_IGNORED):
+        async with self._c:
+            task_status.started()
+            async for x in self._c:
+                tid, r = pickle.loads(x)
+                await self.resultq[abs(tid)].send((tid>0, r))
+        # well, we just let the remote decide when to leave
+        assert self._c.is_clean is False
+        # In case of connection lost, dismiss all pending jobs
+        for rq in list(self.resultq.values()): # frozen
+            await rq.aclose()
     async def connect(self, _n):
-        self._c = await (SocketChannel(f"{self.name}:4242", dial=True, _n=_n)).__aenter__()
+        self._c = SocketChannel(f"{self.name}:4242", dial=True, _n=_n)
+        await _n.start(self._loop)
     async def execf(self, tid, res, fn, args, kwargs):
         with self.wg:
-            await self._c.send(pickle.dumps((tid, res, fn, args, kwargs)))
-            tid2, r2 = pickle.loads(await self._c.receive()) # Not neccessary the matching response
-            if tid2 > 0: self.health = FULL_HEALTH
-            return tid2, r2
+            self.resultq[tid], rq = trio.open_memory_channel(0)
+            try:
+                await self._c.send(pickle.dumps((tid, res, fn, args, kwargs)))
+                ok, r = await rq.receive()
+            except (trio.ClosedResourceError, trio.EndOfChannel):
+                # TODO: dedicated error class?
+                ok, r = False, ("",RuntimeError(f"remote {self.name} closed connection unexpectedly"))
+            if ok: self.health = FULL_HEALTH
+            del self.resultq[tid]
+            return ok, r
     async def aclose(self):
-        await self._c.send(b"FIN")
+        try:
+            await self._c.send(b"FIN")
+        except trio.ClosedResourceError: # KI, or connection lost
+            pass
         print(f"worker {self.name} starts cleaning up")
         await self.wg.wait()
-        await self._c.aclose()
         print(f"worker {self.name} clear")
 
 GVAR.instance = "local"
@@ -51,12 +72,12 @@ class GrainPseudoRemote(object):
         with self.wg, cs:
             GVAR.res = res
             try:
-                r = await fn(*args, **kwargs)
+                ok, r = True, await fn(*args, **kwargs)
                 self.health = FULL_HEALTH
             except Exception as e:
-                tid, r = -tid, (partial(fn, *args, **kwargs), traceback.format_exc(), e)
+                ok, r = False, (traceback.format_exc(), e)
             self.cg.remove(cs)
-            return tid, r
+            return ok, r
     async def aclose(self):
         for cs in self.cg:
             cs.cancel()
@@ -167,7 +188,6 @@ class GrainExecutor(object):
         self.results = []
         self._n = _n
         self._wg = WaitGroup() # track the entire lifetime of each job
-        self.hold = {}
         self.reschedule = reschedule
         self.mgr = GrainManager(
             [GrainPseudoRemote(deepcopy(rpw if not nolocal else ZERO))] + \
@@ -183,20 +203,19 @@ class GrainExecutor(object):
 
     async def __task_with_res(self, tid, res, w, fn, args, kwargs):
         try:
-            self.hold[tid] = res
-            tid2, r2 = await w.execf(tid, res, fn, args, kwargs) # Not neccessary the matching response
-            res2 = self.hold.pop(abs(tid2))
-            if tid2 > 0:
-                self.push_result.send_nowait((tid2, r2))
+            fn2 = partial(fn, *args, **kwargs)
+            ok, r = await w.execf(tid, res, fn, args, kwargs)
+            if ok:
+                self.push_result.send_nowait((tid, r))
             else:
-                fn2, tb, err = r2
+                tb, err = r
                 if not self.reschedule:
                     raise RuntimeError(f"worker {w.name}'s task {fn2} raises {err.__class__.__name__}: {err}, abort.")
                 print(f"worker {w.name}'s task {fn2} raises {err.__class__.__name__}: {err}, going to reschedule it...")
                 await self.mgr.health_check(w, tb, err)
                 self._wg.add()
-                self.push_job.send_nowait((-tid2, res2, fn2, [], {})) # preserve tid
-            await self.mgr.dealloc(w, res2)
+                self.push_job.send_nowait((tid, res, fn2, [], {})) # preserve tid
+            await self.mgr.dealloc(w, res)
         finally:
             self._wg.done()
 

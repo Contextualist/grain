@@ -4,8 +4,6 @@ from math import inf as INFIN
 from functools import partial
 import struct
 
-from .util import nullacontext
-
 async def notify(addr, msg): # TODO: retry until connected
     """Open a connection, send `msg`, then close the
     connection immediately.
@@ -56,13 +54,13 @@ class SocketChannel(trio.abc.SendChannel, SocketReceiveChannel):
     order to setup a single deplex connection.
     `receive` returns item type of `data: byte`
     """
-    def __init__(self, addr, _n, listen=False, dial=False, manual_close=True):
+    def __init__(self, addr, _n, listen=False, dial=False):
         SocketReceiveChannel.__init__(self, addr, _n)
         self._so = None
         self._send_lock = trio.Lock()
         assert listen != dial
         self.listen = listen
-        self.manual_close = manual_close
+        self.is_clean = True
     async def __aenter__(self):
         if self.listen:
             await self._n.start(partial(serve_tcp, self._handler, self.port, host=self.host, cs=self._cs))
@@ -73,7 +71,7 @@ class SocketChannel(trio.abc.SendChannel, SocketReceiveChannel):
     async def _handler(self, s):
         self._so = s
         size, data = 0, b'' # TODO: use byte buffer
-        async with (s if not self.manual_close else nullacontext()):
+        async with s:
             async for x in s:
                 data += x
                 if not size:
@@ -82,11 +80,12 @@ class SocketChannel(trio.abc.SendChannel, SocketReceiveChannel):
                     else:
                         continue
                 while size and len(data) >= size: # loop to consume sticky end
-                    self.in_s.send_nowait(data[:size]) # NOTE: return data only
+                    self.in_s.send_nowait(data[:size])
                     size, data = 0, data[size:]
                     if len(data) >= LEN:
                         (size,), data = struct.unpack(FMT, data[:LEN]), data[LEN:]
-            else: # socket terminated
+            else: # socket terminated by remote
+                self.is_clean = False
                 await self.in_s.aclose()
     async def _handler_d(self, s):
         # for listeners, we cancel the accept loop, while here we cancel the only stream

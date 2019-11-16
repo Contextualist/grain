@@ -15,7 +15,7 @@ async def exerf(tid, res, func, so):
         r = await func()
     except BaseException as e:
         if type(e) is trio.Cancelled: e = WorkerCancelled()
-        tid, r = -tid, (func, traceback.format_exc(), e) # negative tid for failure
+        tid, r = -tid, (traceback.format_exc(), e) # negative tid for failure
     finally:
         with trio.move_on_after(3) as cleanup_scope:
             cleanup_scope.shield = True
