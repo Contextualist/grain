@@ -22,14 +22,21 @@ async def exerf(tid, res, func, so):
             await so.send(pickle.dumps((tid, r)))
 
 async def grain_worker():
-    print(f"connecting to head {carg.head!r}...")
     RES = eval(carg.res) # FIXME: better way to define res
     timesc = trio.fail_after(RES.T) if hasattr(RES, 'T') else nullcontext()
-    await notify(f"{carg.head}:4243", b"REG"+pickle.dumps((GVAR.instance, RES)))
-    print("worker launched")
+    passive = not (carg.head and RES)
+    if passive:
+        sockopt = dict(addr=":4242", listen=True)
+        print("passive mode enabled")
+    else:
+        sockopt = dict(addr=f"{carg.head}:4242", dial=True)
+        print(f"connecting to head {carg.head!r}...")
     async with trio.open_nursery() as _cn, \
-               SocketChannel(":4242", listen=True, _n=_cn) as so, \
+               SocketChannel(**sockopt, _n=_cn) as so, \
                trio.open_nursery() as _n:
+        if not passive:
+            await so.send(b"CON"+pickle.dumps((GVAR.instance, RES)))
+        print("worker launched")
         try:
             with timesc:
                 async for msg in so:
@@ -42,8 +49,11 @@ async def grain_worker():
                     print("connection to head lost, worker exits")
                     so.send = anop
         except BaseException as e:
+            if passive:
+                print(f"interrupted by {e.__class__.__name__}")
+                return # `GVAR.instance` might differ from head's record, so don't notify
             print(f"interrupted by {e.__class__.__name__}, notify head")
-            await notify(f"{carg.head}:4243", b"UNR"+GVAR.instance.encode())
+            await notify(f"{carg.head}:4242", b"UNR"+GVAR.instance.encode(), seg=True)
             if (await so.receive()) != b"FIN": assert False
             print("received FIN from head, worker exits")
         finally:
@@ -61,8 +71,8 @@ class WorkerCancelled(BaseException):
 
 if __name__ == "__main__":
     argp = argparse.ArgumentParser(description="Worker instance for Grain")
-    argp.add_argument('--head', help="address of Grain's head instance")
-    argp.add_argument('--res', '-r', help="the resource owned by the worker (e.g. Node(N=16,M=28)&WTime(1800)")
+    argp.add_argument('--head', default="", help="address of Grain's head instance")
+    argp.add_argument('--res', '-r', default="None", help="the resource owned by the worker (e.g. Node(N=16,M=28)&WTime(1800)")
     carg = argp.parse_args()
 
     GVAR.instance = trio.socket.gethostname()

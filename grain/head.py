@@ -9,7 +9,7 @@ import traceback
 from .contextvar import GVAR
 from .util import timeblock, WaitGroup, nullacontext
 from .resource import ZERO
-from .pair import listen_signal, SocketChannel
+from .pair import SocketChannel, SocketChannelAcceptor
 
 FULL_HEALTH = 3
 
@@ -56,6 +56,20 @@ class GrainRemote(object):
         await self.wg.wait()
         print(f"worker {self.name} clear")
 
+class GrainReverseRemote(GrainRemote):
+    """A Grain remote for which the worker dial in
+    (e.g. in the case when worker doesn't have accessible
+    port, but is able to access the head.)
+    The registration message (i.e. (vaddr, res)) should
+    be sent as the first message.
+    See `GrainManager.worker_manager`.
+    """
+    def __init__(self, _c, vaddr, res):
+        GrainRemote.__init__(self, vaddr, res)
+        self._c = _c
+    async def connect(self, _n):
+        _n.start_soon(self._loop)
+
 GVAR.instance = "local"
 class GrainPseudoRemote(object):
     def __init__(self, res):
@@ -95,7 +109,7 @@ class GrainManager(object):
         self.temperr = temperr
         self.persistent = persistent
         self.cond_res = trio.Condition()
-        self.chsig = None
+        self.soacceptor = None
 
     async def schedule(self, res): # naive scheduling alg: greedy
         async with self.cond_res:
@@ -119,8 +133,8 @@ class GrainManager(object):
                 w.res.dealloc(res)
                 self.cond_res.notify()
 
-    async def register(self, w):
-        await w.connect(self._n)
+    async def register(self, w, _n):
+        await w.connect(_n)
         async with self.cond_res:
             self.pool.append(w)
             self.cond_res.notify()
@@ -135,33 +149,42 @@ class GrainManager(object):
                 raise RuntimeError(f"worker {name} exits, abort.")
     async def worker_manager(self, task_status=trio.TASK_STATUS_IGNORED):
         async with trio.open_nursery() as _n, \
-                   listen_signal("0.0.0.0:4243", _n) as self.chsig:
+                   SocketChannelAcceptor(":4242", _n=_n) as self.soacceptor:
+            for w in self.pool:
+                await w.connect(_n)
             task_status.started()
-            async for (addr, _), msg in self.chsig:
-                #addr, _ = await trio.socket.getnameinfo((addr,0),0)
+            async for _c in self.soacceptor:
+                try:
+                    msg = await _c.receive()
+                except trio.EndOfChannel:
+                    continue
                 cmd, msg = msg[:3], msg[3:]
-                if cmd == b"REG":
+                if cmd == b"CON": # connect
+                    vaddr, res = pickle.loads(msg)
+                    print(f"worker {vaddr} joined with {res}")
+                    await self.register(GrainReverseRemote(_c, vaddr, res), _n)
+                    continue
+                await _c.aclose() # The following are ephemeral cmds
+                if cmd == b"REG": # register
                     addr, res = pickle.loads(msg)
                     print(f"worker {addr} joined with {res}")
-                    await self.register(GrainRemote(addr, res))
-                elif cmd == b"UNR":
+                    await self.register(GrainRemote(addr, res), _n)
+                elif cmd == b"UNR": # unregister
                     addr = msg.decode()
                     print(f"worker {addr} asked for quit")
                     await self.unregister(addr)
                 else:
-                    print(f"worker manager received unknown command {cmd} from {addr}")
+                    print(f"worker manager received unknown command {cmd} from {_c.host}")
 
     async def __aenter__(self):
-        for w in self.pool:
-            await w.connect(self._n)
         await self._n.start(self.worker_manager)
 
     async def aclose(self):
         with trio.move_on_after(10) as cleanup_scope: # 10s cleanup
             cleanup_scope.shield = True
-            await self.chsig.aclose()
             for w in self.pool:
                 await w.aclose()
+            await self.soacceptor.aclose()
 
     async def __aexit__(self, *exc):
         await self.aclose()
@@ -173,15 +196,16 @@ class GrainExecutor(object):
     sync: TODO
     async: TODO
     """
-    def __init__(self,
-                 waddrs,
-                 rpw,
-                 _n=None,
-                 nolocal=False,    # run jobs on local or not
-                 temporary_err=(), # exceptions that's not critical to shutdown a worker
-                 reschedule=True,  # if False, abort on any exception
-                 persistent=True,  # if False, abort on any worker's exit
-                 ):
+    def __init__(
+        self,
+        waddrs=(),        # list of initial passive workers' addresses
+        rpw=ZERO,         # resource per worker for the initial passive workers
+        _n=None,          # (in async mode) external trio.Nursery for self's and manager's run loop
+        nolocal=False,    # run jobs on local or not
+        temporary_err=(), # exceptions that's not critical to shutdown a worker
+        reschedule=True,  # if False, abort on any exception
+        persistent=True,  # if False, abort on any worker's exit
+     ):
         self.push_job, self.pull_job = trio.open_memory_channel(INFIN)
         self.push_result, self.resultq = trio.open_memory_channel(INFIN)
         self.jobn = 0
