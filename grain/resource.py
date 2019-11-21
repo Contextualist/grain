@@ -1,21 +1,20 @@
+__all__ = ["Resource", "ZERO", "Cores", "Memory", "Node", "WTime", "res2link0"]
+
 class Resource(object):
-    """Return true if it is possible to alloc(res)
-    """
     def _request(self, res):
-        pass
-    """Return allocated resources. Allocated resources
-    should also be able to be used as request resources (i.e.
-    `B.request(A.alloc(some_res))`), but vice versa does not
-    necessary need to be true.
-    """
+        """Return true if it is possible to alloc(res)
+        """
     def _alloc(self, res):
-        pass
+        """Return allocated resources. Allocated resources
+        should also be able to be used as request resources (i.e.
+        `B.request(A.alloc(some_res))`), but vice versa does not
+        necessary need to be true.
+        """
     def _dealloc(self, res):
         pass
-    """__repr__, for concatenating with other resources
-    """
     def _repr(self):
-        pass
+        """__repr__, for concatenating with other resources
+        """
 
     def __init__(self, init=True):
         self.__resm = { self.__class__.__name__: self } if init else {}
@@ -82,7 +81,13 @@ class Cores(Resource): # CPU cores
             self.c = set(N)
             self.N = len(N)
     def _repr(self):
-        return f"CPU_Cores([{','.join(map(str,sorted(self.c)))}])"
+        first, *c = sorted(self.c)
+        con = [[first,first]]
+        for x in c:
+            if x == con[-1][1]+1: con[-1][1] = x
+            else: con.append([x,x])
+        clist = ','.join((str(x) if x==y else f"{x}-{y}") for x,y in con)
+        return f"CPU_Cores([{clist}])"
 
     # For request/alloc we only care about the count but not identities
     def _request(self, res):
@@ -131,6 +136,9 @@ class WTime(Resource): # walltime, not restorable
 
     def __init__(self, T, countdown=False): # countdown ? allocer : requester
         super().__init__()
+        if isinstance(T, str):
+            *d, h, m, s = map(int, T.replace('-',':').split(':'))
+            T = 86400*(d or [0])[-1] + 3600*h + 60*m + s
         self.deadline = time.time() + T if countdown else 0
         self.T = T
     def _repr(self):

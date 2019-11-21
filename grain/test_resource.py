@@ -17,8 +17,8 @@ def test_zero():
 
 def test_cores():
     # repr
-    assert str(Cores(3)) == "CPU_Cores([0,1,2])"
-    assert str(Cores([5,7,8])) == "CPU_Cores([5,7,8])"
+    assert str(Cores(3)) == "CPU_Cores([0-2])"
+    assert str(Cores([5,7,8])) == "CPU_Cores([5,7-8])"
     # request, alloc
     c0 = Cores(16)
     assert c0.request(Cores(16))
@@ -49,12 +49,13 @@ def test_memory():
     assert m0.m==m0.M==64
 
 def test_walltime(monkeypatch):
+    import time
     monkeypatch.setattr(time, "time", lambda: now) # mock timestamp
     # repr
     now = 0.0
-    t0, t1 = WTime(7000), WTime(7000, countdown=True)
+    t0, t1, t2 = WTime("1:56:40"), WTime(7000), WTime(7000, countdown=True)
     now += 2.0
-    assert str(t0)=="Walltime(01:56:40)" and str(t1)=="Walltime(01:56:38)"
+    assert str(t0)==str(t1)=="Walltime(01:56:40)" and str(t2)=="Walltime(01:56:38)"
     # request, alloc
     now = 0.0
     t2 = WTime(30, countdown=True)
@@ -65,7 +66,7 @@ def test_walltime(monkeypatch):
 
 def test_multiresource():
     # repr
-    assert str(Cores(3) & Memory(16)) == "CPU_Cores([0,1,2]) & Memory(16GB)"
+    assert str(Cores(3) & Memory(16)) == "CPU_Cores([0-2]) & Memory(16GB)"
     # request, alloc
     r = Cores(6) & Memory(16)
     assert r.request(Memory(8))
