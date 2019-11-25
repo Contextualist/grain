@@ -43,8 +43,8 @@ async def grain_worker():
                     if msg == b"FIN": # end of queue / low health / server error
                         print("received FIN from head, worker exits")
                         break
-                    tid, res, fn, args, kwargs = pickle.loads(msg)
-                    _n.start_soon(exerf, tid, res, partial(fn, *args, **kwargs), so)
+                    tid, res, fn = pickle.loads(msg)
+                    _n.start_soon(exerf, tid, res, fn, so)
                 else:
                     print("connection to head lost, worker exits")
                     so.send = anop

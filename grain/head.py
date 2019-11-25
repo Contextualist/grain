@@ -35,11 +35,11 @@ class GrainRemote(object):
     async def connect(self, _n):
         self._c = SocketChannel(f"{self.name}:4242", dial=True, _n=_n)
         await _n.start(self._loop)
-    async def execf(self, tid, res, fn, args, kwargs):
+    async def execf(self, tid, res, fn):
         with self.wg:
             self.resultq[tid], rq = trio.open_memory_channel(0)
             try:
-                await self._c.send(pickle.dumps((tid, res, fn, args, kwargs)))
+                await self._c.send(pickle.dumps((tid, res, fn)))
                 ok, r = await rq.receive()
             except (trio.ClosedResourceError, trio.EndOfChannel):
                 # TODO: dedicated error class?
@@ -80,13 +80,13 @@ class GrainPseudoRemote(object):
         self.cg = []
     async def connect(self, _n):
         pass
-    async def execf(self, tid, res, fn, args, kwargs):
+    async def execf(self, tid, res, fn):
         cs = trio.CancelScope()
         self.cg.append(cs)
         with self.wg, cs:
             GVAR.res = res
             try:
-                ok, r = True, await fn(*args, **kwargs)
+                ok, r = True, await fn()
                 self.health = FULL_HEALTH
             except Exception as e:
                 ok, r = False, (traceback.format_exc(), e)
@@ -220,25 +220,24 @@ class GrainExecutor(object):
 
     async def asubmit(self, res, fn, *args, **kwargs):
         self._wg.add()
-        await self.push_job.send((0, res, fn, args, kwargs))
+        await self.push_job.send((0, res, partial(fn, *args, **kwargs)))
     def submit(self, res, fn, *args, **kwargs):
         self._wg.add()
-        self.push_job.send_nowait((0, res, fn, args, kwargs))
+        self.push_job.send_nowait((0, res, partial(fn, *args, **kwargs)))
 
-    async def __task_with_res(self, tid, res, w, fn, args, kwargs):
+    async def __task_with_res(self, tid, res, w, fn):
         try:
-            fn2 = partial(fn, *args, **kwargs)
-            ok, r = await w.execf(tid, res, fn, args, kwargs)
+            ok, r = await w.execf(tid, res, fn)
             if ok:
                 self.push_result.send_nowait((tid, r))
             else:
                 tb, err = r
                 if not self.reschedule:
-                    raise RuntimeError(f"worker {w.name}'s task {fn2} raises {err.__class__.__name__}: {err}, abort.")
-                print(f"worker {w.name}'s task {fn2} raises {err.__class__.__name__}: {err}, going to reschedule it...")
+                    raise RuntimeError(f"worker {w.name}'s task {fn} raises {err.__class__.__name__}: {err}, abort.")
+                print(f"worker {w.name}'s task {fn} raises {err.__class__.__name__}: {err}, going to reschedule it...")
                 await self.mgr.health_check(w, tb, err)
                 self._wg.add()
-                self.push_job.send_nowait((tid, res, fn2, [], {})) # preserve tid
+                self.push_job.send_nowait((tid, res, fn)) # preserve tid
             await self.mgr.dealloc(w, res)
         finally:
             self._wg.done()
@@ -253,10 +252,10 @@ class GrainExecutor(object):
                 async with self.mgr, \
                            trio.open_nursery() as _n, \
                            self.pull_job:
-                    async for tid, res, *fa in self.pull_job:
+                    async for tid, res, fn in self.pull_job:
                         if not tid: tid = self.jobn = self.jobn+1
                         res, w = await self.mgr.schedule(res)
-                        _n.start_soon(self.__task_with_res, tid, res, w, *fa)
+                        _n.start_soon(self.__task_with_res, tid, res, w, fn)
         finally:
             await self.push_result.aclose()
 
