@@ -1,6 +1,7 @@
 from contextlib import ContextDecorator
 from timeit import default_timer as timer
 from functools import wraps
+import types
 
 def timeblock(text="this block", enter=False):
     class TimeblockCtx(ContextDecorator):
@@ -35,7 +36,9 @@ def aretry(attempts=3, dropafter=180, errtype=Exception, silent=False, kwargs1=N
     return __wrapper
 
 
+import trio
 from trio.hazmat import ParkingLot, checkpoint, enable_ki_protection
+from outcome import Value
 
 class WaitGroup(object):
 
@@ -61,6 +64,28 @@ class WaitGroup(object):
             await checkpoint()
         else:
             await self._lot.park()
+
+
+@enable_ki_protection
+def cutin_nowait(self, value):
+    if self._closed:
+        raise trio.ClosedResourceError
+    if self._state.open_receive_channels == 0:
+        raise trio.BrokenResourceError
+    if self._state.receive_tasks:
+        assert not self._state.data
+        task, _ = self._state.receive_tasks.popitem(last=False)
+        task.custom_sleep_data._tasks.remove(task)
+        trio.hazmat.reschedule(task, Value(value))
+    elif len(self._state.data) < self._state.max_buffer_size:
+        self._state.data.appendleft(value)
+    else:
+        raise trio.WouldBlock
+
+def make_prependable(mschan):
+    mschan.cutin_nowait = types.MethodType(cutin_nowait, mschan)
+    return mschan
+
 
 class nullacontext(object):
     async def __aenter__(self):

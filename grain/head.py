@@ -7,7 +7,7 @@ from functools import partial
 import traceback
 
 from .contextvar import GVAR
-from .util import timeblock, WaitGroup, nullacontext
+from .util import timeblock, WaitGroup, nullacontext, make_prependable
 from .resource import ZERO
 from .pair import SocketChannel, SocketChannelAcceptor
 
@@ -207,6 +207,7 @@ class GrainExecutor(object):
         persistent=True,  # if False, abort on any worker's exit
      ):
         self.push_job, self.pull_job = trio.open_memory_channel(INFIN)
+        self.push_job = make_prependable(self.push_job)
         self.push_result, self.resultq = trio.open_memory_channel(INFIN)
         self.jobn = 0
         self.results = []
@@ -224,6 +225,9 @@ class GrainExecutor(object):
     def submit(self, res, fn, *args, **kwargs):
         self._wg.add()
         self.push_job.send_nowait((0, res, partial(fn, *args, **kwargs)))
+    def resubmit(self, tid, res, fn):
+        self._wg.add()
+        self.push_job.cutin_nowait((tid, res, fn)) # prepend the queue
 
     async def __task_with_res(self, tid, res, w, fn):
         try:
@@ -236,8 +240,7 @@ class GrainExecutor(object):
                     raise RuntimeError(f"worker {w.name}'s task {fn} raises {err.__class__.__name__}: {err}, abort.")
                 print(f"worker {w.name}'s task {fn} raises {err.__class__.__name__}: {err}, going to reschedule it...")
                 await self.mgr.health_check(w, tb, err)
-                self._wg.add()
-                self.push_job.send_nowait((tid, res, fn)) # preserve tid
+                self.resubmit(tid, res, fn) # preserve tid
             await self.mgr.dealloc(w, res)
         finally:
             self._wg.done()

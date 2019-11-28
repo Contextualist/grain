@@ -24,7 +24,7 @@ async def _grouped_task(gid, fn, *args, **kwargs):
 CombineGroup, Exec1 = None, None
 @contextmanager
 def CombineGroup_ctxt(exer, push_newgroup):
-    sema = trio.Semaphore(50) # rate limit
+    sema = trio.Semaphore(300) # rate limit
     gid = 0 # monotonously incremental with __aenter__'s side-effect
 
     class __CombineGroup(object):
