@@ -15,6 +15,10 @@ class Resource(object):
     def _repr(self):
         """__repr__, for concatenating with other resources
         """
+    def _stat(self):
+        """Return (p,q) where p and q are `int`, and p/q
+        represents the percentage resource availability.
+        """
 
     def __init__(self, init=True):
         self.__resm = { self.__class__.__name__: self } if init else {}
@@ -65,6 +69,9 @@ class Resource(object):
             raise ValueError(f"Cannot dealloc: resource {self} does not have the same shape as {res}")
         for k,v in res.__resm.items():
             self.__resm[k]._dealloc(v)
+    def stat(self):
+        return {k:v._stat() for k,v in self.__resm.items()}
+
 
 
 ZERO = Resource(init=False)
@@ -103,6 +110,9 @@ class Cores(Resource): # CPU cores
     def _dealloc(self, res):
         self.c |= res.c
 
+    def _stat(self):
+        return len(self.c), self.N
+
 
 class Memory(Resource): # vmem
 
@@ -125,6 +135,9 @@ class Memory(Resource): # vmem
 
     def _dealloc(self, res):
         self.m += res.m
+
+    def _stat(self):
+        return self.m, self.M
 
 
 def Node(N, M):
@@ -155,6 +168,9 @@ class WTime(Resource): # walltime, not restorable
 
     def _dealloc(self, res):
         pass
+
+    def _stat(self):
+        return 1, 1
 
 
 def res2link0(res):

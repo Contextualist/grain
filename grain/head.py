@@ -10,8 +10,10 @@ from .contextvar import GVAR
 from .util import timeblock, WaitGroup, nullacontext, make_prependable
 from .resource import ZERO
 from .pair import SocketChannel, SocketChannelAcceptor
+from .stat import log_event, stat_logger, ls_worker_res, reg_probe, collect_probe
 
 FULL_HEALTH = 3
+STATSPAN = 15 # minutes
 
 class GrainRemote(object):
     def __init__(self, addr, res):
@@ -164,17 +166,21 @@ class GrainManager(object):
                     print(f"worker {vaddr} joined with {res}")
                     await self.register(GrainReverseRemote(_c, vaddr, res), _n)
                     continue
-                await _c.aclose() # The following are ephemeral cmds
-                if cmd == b"REG": # register
-                    addr, res = pickle.loads(msg)
-                    print(f"worker {addr} joined with {res}")
-                    await self.register(GrainRemote(addr, res), _n)
-                elif cmd == b"UNR": # unregister
-                    addr = msg.decode()
-                    print(f"worker {addr} asked for quit")
-                    await self.unregister(addr)
-                else:
-                    print(f"worker manager received unknown command {cmd} from {_c.host}")
+                async with _c: # The following are ephemeral cmds
+                    if cmd == b"REG": # register
+                        addr, res = pickle.loads(msg)
+                        print(f"worker {addr} joined with {res}")
+                        await self.register(GrainRemote(addr, res), _n)
+                    elif cmd == b"UNR": # unregister
+                        addr = msg.decode()
+                        print(f"worker {addr} asked for quit")
+                        await self.unregister(addr)
+                    elif cmd == b"STA": # statistics
+                        sta = ls_worker_res(self.pool) + '\n' + \
+                              collect_probe()
+                        await _c.try_send(sta.encode())
+                    else:
+                        print(f"worker manager received unknown command {cmd} from {_c.host}")
 
     async def __aenter__(self):
         await self._n.start(self.worker_manager)
@@ -218,6 +224,7 @@ class GrainExecutor(object):
             [GrainPseudoRemote(deepcopy(rpw if not nolocal else ZERO))] + \
             [GrainRemote(a, deepcopy(rpw)) for a in waddrs],
             self._n, temporary_err, persistent)
+        reg_probe("queued jobs", lambda: len(self.push_job._state.data))
 
     async def asubmit(self, res, fn, *args, **kwargs):
         self._wg.add()
@@ -233,8 +240,10 @@ class GrainExecutor(object):
         try:
             ok, r = await w.execf(tid, res, fn)
             if ok:
+                log_event("completed")
                 self.push_result.send_nowait((tid, r))
             else:
+                log_event("error")
                 tb, err = r
                 if not self.reschedule:
                     raise RuntimeError(f"worker {w.name}'s task {fn} raises {err.__class__.__name__}: {err}, abort.")
@@ -250,9 +259,11 @@ class GrainExecutor(object):
         await self.push_job.aclose()
 
     async def run(self):
+        reg_probe("next pending job's res", lambda: res)
         try:
             with timeblock("all jobs"):
                 async with self.mgr, \
+                           stat_logger(STATSPAN), \
                            trio.open_nursery() as _n, \
                            self.pull_job:
                     async for tid, res, fn in self.pull_job:
