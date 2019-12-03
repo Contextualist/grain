@@ -92,3 +92,27 @@ class nullacontext(object):
         return self
     async def __aexit__(self, *exc):
         return False
+
+
+def set_numpy_oneline_repr():
+    """Change the default Numpy array __repr__ to a
+    compact one. This is useful for keeping the log
+    clean when the job functions involve large Numpy
+    arrays as args.
+    """
+    import numpy as np
+    EDGEITEMS = 3
+    def oneline_repr(a):
+        N = np.prod(a.shape)
+        ind = np.unravel_index(range(min(EDGEITEMS, N)), a.shape)
+        afew = []
+        for x,val in zip(np.c_[ind], a[ind]):
+            for i,y in enumerate(x[::-1]):
+                if y != 0: break
+            else: i+=1
+            for j,y in enumerate(x[::-1]):
+                if y+1 != a.shape[len(x)-j-1]: break
+            else: j+=1
+            afew.append(f"{'['*i}{val}{']'*j}")
+        return f"array[{a.shape}]({', '.join(afew)}{'...' if N > EDGEITEMS else ''})"
+    np.set_string_function(oneline_repr, repr=True)
