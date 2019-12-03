@@ -50,10 +50,7 @@ class GrainRemote(object):
             del self.resultq[tid]
             return ok, r
     async def aclose(self):
-        try:
-            await self._c.send(b"FIN")
-        except trio.ClosedResourceError: # KI, or connection lost
-            pass
+        await self._c.try_send(b"FIN") # fails if KI or connection lost
         print(f"worker {self.name} starts cleaning up")
         await self.wg.wait()
         print(f"worker {self.name} clear")

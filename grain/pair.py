@@ -75,7 +75,7 @@ class SocketChannel(trio.abc.SendChannel, SocketReceiveChannel):
         self._so = s
         size, data = 0, b'' # TODO: use byte buffer
         async with s:
-            async for x in s:
+            async for x in calmly_stop(s):
                 data += x
                 if not size:
                     if len(data) >= LEN:
@@ -100,6 +100,11 @@ class SocketChannel(trio.abc.SendChannel, SocketReceiveChannel):
         size = struct.pack(FMT, len(data))
         async with self._send_lock:
             await self._so.send_all(size+data)
+    async def try_send(self, data):
+        try:
+            await self.send(data)
+        except trio.ClosedResourceError:
+            pass
 
 
 class SocketChannelAcceptor(SocketReceiveChannel):
@@ -136,3 +141,13 @@ def parse_addr(host_port):
     host, port = host_port.split(':')
     if not host: host = "0.0.0.0"
     return host, int(port)
+
+async def calmly_stop(s):
+    while True:
+        try:
+            data = await s.receive_some()
+        except trio.BrokenResourceError:
+            return
+        if not data:
+            return
+        yield data
