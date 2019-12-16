@@ -17,10 +17,15 @@ setuptools.setup(
     install_requires=[
         "trio",
         "dill",
+        "toml",
+        "click",
     ],
     tests_require = [
         "pytest",
     ],
+    entry_points = {
+        "console_scripts": ["grain=grain.cli:main"],
+    },
     classifiers=[
         "Development Status :: 3 - Alpha",
         "Framework :: Trio",

@@ -37,7 +37,7 @@ grain.run_combine(main, [worker1_addr, worker2_addr, ...], resource_per_worker)
 #grain.run_combine([main1, main2, ...], ...)
 ```
 
-Check out [example](example) for complete demos / more patterns and a PBS script to start workers.
+Check out [example](example) for complete demos / more patterns and configuration sample.
 
 ### Resource-awareness
 
