@@ -12,7 +12,8 @@ from .pair import notify, SocketChannel
 async def exerf(tid, res, func, so):
     GVAR.res = res
     try:
-        r = await func()
+        with trio.fail_after(res.T) if hasattr(res, 'T') else nullcontext():
+            r = await func()
     except BaseException as e:
         if type(e) is trio.Cancelled: e = WorkerCancelled()
         tid, r = -tid, (traceback.format_exc(), e) # negative tid for failure

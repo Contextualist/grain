@@ -28,7 +28,12 @@ class GrainRemote(object):
             task_status.started()
             async for x in self._c:
                 tid, r = pickle.loads(x)
-                await self.resultq[abs(tid)].send((tid>0, r))
+                rq = self.resultq.get(abs(tid))
+                if rq:
+                    await rq.send((tid>0, r))
+                else:
+                    log_event("late_response")
+                    print(f"remote {self.name} received phantom job {abs(tid)}'s result")
         # well, we just let the remote decide when to leave
         assert self._c.is_clean is False
         # In case of connection lost, dismiss all pending jobs
@@ -42,10 +47,14 @@ class GrainRemote(object):
             self.resultq[tid], rq = trio.open_memory_channel(0)
             try:
                 await self._c.send(pickle.dumps((tid, res, fn)))
-                ok, r = await rq.receive()
+                with trio.fail_after(res.T+180) if hasattr(res, 'T') else nullacontext(): # 3min grace period
+                    ok, r = await rq.receive()
             except (trio.ClosedResourceError, trio.EndOfChannel):
                 # TODO: dedicated error class?
                 ok, r = False, ("",RuntimeError(f"remote {self.name} closed connection unexpectedly"))
+            except trio.TooSlowError:
+                log_event("lost_or_late_response")
+                ok, r = False, ("",trio.TooSlowError(f"remote {self.name} lost track of job {tid}"))
             if ok: self.health = FULL_HEALTH
             del self.resultq[tid]
             return ok, r
@@ -85,9 +94,10 @@ class GrainPseudoRemote(object):
         with self.wg, cs:
             GVAR.res = res
             try:
-                ok, r = True, await fn()
-                self.health = FULL_HEALTH
-            except Exception as e:
+                with trio.fail_after(res.T) if hasattr(res, 'T') else nullacontext():
+                    ok, r = True, await fn()
+                    self.health = FULL_HEALTH
+            except BaseException as e:
                 ok, r = False, (traceback.format_exc(), e)
             self.cg.remove(cs)
             return ok, r

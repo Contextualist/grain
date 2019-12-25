@@ -147,19 +147,20 @@ def Node(N, M):
 import time
 class WTime(Resource): # walltime, not restorable
 
-    def __init__(self, T, countdown=False): # countdown ? allocer : requester
+    def __init__(self, T, softT=None, countdown=False): # countdown ? allocer : requester
         super().__init__()
         if isinstance(T, str):
             *d, h, m, s = map(int, T.replace('-',':').split(':'))
             T = 86400*(d or [0])[-1] + 3600*h + 60*m + s
         self.deadline = time.time() + T if countdown else 0
         self.T = T
+        self.softT = softT or T
     def _repr(self):
         t = int(self.deadline - time.time()) if self.deadline else self.T
         return f"Walltime({t//3600:02}:{t%3600//60:02}:{t%60:02})"
 
-    def _request(self, res):
-        return self.deadline - time.time() >= res.T
+    def _request(self, res): # loose condition
+        return self.deadline - time.time() >= res.softT
 
     def _alloc(self, res):
         if not self._request(res):

@@ -88,10 +88,10 @@ def make_prependable(mschan):
 
 
 class nullacontext(object):
-    async def __aenter__(self):
-        return self
-    async def __aexit__(self, *exc):
-        return False
+    def __enter__(self): return self
+    def __exit__(self, *exc): return False
+    async def __aenter__(self): return self
+    async def __aexit__(self, *exc): return False
 
 
 def set_numpy_oneline_repr():
