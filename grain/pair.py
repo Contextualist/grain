@@ -3,6 +3,12 @@ import trio
 from math import inf as INFIN
 from functools import partial
 import struct
+import io
+
+# +--------+-----------+
+# | LEN(4) | DATA(LEN) |
+# +--------+-----------+
+FMT, LEN = '>L', 4 # unsigned long / uint32
 
 async def notify(addr, msg, seg=False): # TODO: retry until connected
     """Open a connection, send `msg`, then close the
@@ -48,10 +54,6 @@ class EphemeralSocketReceiveChannel(SocketReceiveChannel):
 listen_signal = EphemeralSocketReceiveChannel
 
 
-FMT, LEN = '>L', 4 # unsigned long / uint32
-# +--------+-----------+
-# | LEN(4) | DATA(LEN) |
-# +--------+-----------+
 class SocketChannel(trio.abc.SendChannel, SocketReceiveChannel):
     """Dial to one endpoint / accept one connection in
     order to setup a single deplex connection.
@@ -73,20 +75,9 @@ class SocketChannel(trio.abc.SendChannel, SocketReceiveChannel):
         return self
     async def _handler(self, s):
         self._so = s
-        size, data = 0, b'' # TODO: use byte buffer
         async with s:
-            async for x in calmly_stop(s):
-                data += x
-                if not size:
-                    if len(data) >= LEN:
-                        (size,), data = struct.unpack(FMT, data[:LEN]), data[LEN:]
-                    else:
-                        continue
-                while size and len(data) >= size: # loop to consume sticky end
-                    self.in_s.send_nowait(data[:size])
-                    size, data = 0, data[size:]
-                    if len(data) >= LEN:
-                        (size,), data = struct.unpack(FMT, data[:LEN]), data[LEN:]
+            async for p in iter_packet(s):
+                self.in_s.send_nowait(p)
             else: # socket terminated by remote
                 self.is_clean = False
                 await self.in_s.aclose()
@@ -142,12 +133,20 @@ def parse_addr(host_port):
     if not host: host = "0.0.0.0"
     return host, int(port)
 
-async def calmly_stop(s):
+async def iter_packet(s: trio.abc.ReceiveStream):
     while True:
         try:
-            data = await s.receive_some()
-        except trio.BrokenResourceError:
+            plen, = struct.unpack(FMT, await receive_exactly(s, LEN))
+            yield await receive_exactly(s, plen)
+        except (EOFError, trio.BrokenResourceError):
             return
-        if not data:
-            return
-        yield data
+
+async def receive_exactly(s: trio.abc.ReceiveStream, n):
+    buf = io.BytesIO()
+    while n > 0:
+        data = await s.receive_some(n)
+        if data == b"":
+            raise EOFError("end of receive stream")
+        buf.write(data)
+        n -= len(data)
+    return buf.getvalue()
