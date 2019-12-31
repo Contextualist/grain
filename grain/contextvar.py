@@ -1,22 +1,23 @@
-import contextvars
+from contextvars import ContextVar
 
-grain_resource = contextvars.ContextVar("GRAIN_RESOURCE")
-grain_instance = contextvars.ContextVar("GRAIN_INSTANCE")
+_GVAR = dict(
+    res      = ContextVar("GRAIN_RESOURCE"),
+    instance = ContextVar("GRAIN_INSTANCE"),
+)
+
+class _None(object):
+    pass
 
 class GrainVar(object):
 
-    @property
-    def res(self):
-        return grain_resource.get()
-    @res.setter
-    def res(self, v):
-        grain_resource.set(v)
+    def __getattr__(self, k):
+        return _GVAR.get(k).get()
+    def __setattr__(self, k, v):
+        _GVAR.get(k).set(v)
 
-    @property
-    def instance(self):
-        return grain_instance.get()
-    @instance.setter
-    def instance(self, v):
-        grain_instance.set(v)
+    def __getstate__(self):
+        return { k:v.get() for k,v in _GVAR.items() if v.get(_None) is not _None }
+    def __setstate__(self, state):
+        for k,v in state.items(): setattr(self, k, v)
 
 GVAR = GrainVar()
