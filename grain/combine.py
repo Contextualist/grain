@@ -93,8 +93,14 @@ async def relay(inq):
             if i == -1:
                 outqs[g] = outq_or_rslt # init outq
             else:
-                outqs[g].send_nowait((i, outq_or_rslt))
-async def boot_combine(frames, args, kwargs):
+                try:
+                    outqs[g].send_nowait((i, outq_or_rslt))
+                except trio.BrokenResourceError:
+                    # This usually happens when one of the main subtasks throws an error,
+                    # cancelling receive channel's task.
+                    # Suppress this so that the real error can surface.
+                    break
+async def boot_combine(subtasks, args, kwargs):
     async with trio.open_nursery() as _n, \
                GrainExecutor(_n=_n, *args, **kwargs) as exer, \
                exer.push_result.clone() as push_newgroup:

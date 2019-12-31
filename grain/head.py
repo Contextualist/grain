@@ -98,6 +98,7 @@ class GrainPseudoRemote(object):
                     ok, r = True, await fn()
                     self.health = FULL_HEALTH
             except BaseException as e:
+                if type(e) is trio.Cancelled: raise
                 ok, r = False, (traceback.format_exc(), e)
             self.cg.remove(cs)
             return ok, r
