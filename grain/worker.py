@@ -8,6 +8,7 @@ import argparse
 from .contextvar import GVAR
 from .resource import *
 from .pair import notify, SocketChannel
+from .subproc import subprocess_pool_daemon
 
 async def exerf(tid, res, func, so):
     GVAR.res = res
@@ -35,6 +36,7 @@ async def grain_worker():
     async with trio.open_nursery() as _cn, \
                SocketChannel(**sockopt, _n=_cn) as so, \
                trio.open_nursery() as _n:
+        await _n.start(subprocess_pool_daemon)
         if not passive:
             await so.send(b"CON"+pickle.dumps((GVAR.instance, RES)))
         print("worker launched")

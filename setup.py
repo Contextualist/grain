@@ -19,6 +19,7 @@ setuptools.setup(
         "dill",
         "toml",
         "click",
+        "psutil",
     ],
     tests_require = [
         "pytest",

@@ -11,6 +11,7 @@ from .util import timeblock, WaitGroup, nullacontext, make_prependable
 from .resource import ZERO
 from .pair import SocketChannel, SocketChannelAcceptor
 from .stat import log_event, stat_logger, ls_worker_res, reg_probe, collect_probe
+from .subproc import subprocess_pool_daemon, BrokenSubprocessError
 
 FULL_HEALTH = 3
 STATSPAN = 15 # minutes
@@ -85,12 +86,13 @@ class GrainPseudoRemote(object):
         self.name = "local"
         self.health = FULL_HEALTH
         self.wg = WaitGroup()
-        self.cg = []
+        self.cg = set()
     async def connect(self, _n):
-        pass
+        if self.res > ZERO:
+            self.cg.add(await _n.start(subprocess_pool_daemon))
     async def execf(self, tid, res, fn):
         cs = trio.CancelScope()
-        self.cg.append(cs)
+        self.cg.add(cs)
         with self.wg, cs:
             GVAR.res = res
             try:
@@ -116,7 +118,7 @@ class GrainManager(object):
     def __init__(self, pool_init, _n, temperr, persistent, interface=True):
         self.pool = pool_init
         self._n = _n
-        self.temperr = temperr
+        self.temperr = {*set(temperr), BrokenSubprocessError}
         self.persistent = persistent
         self.cond_res = trio.Condition()
         self.soacceptor = None
