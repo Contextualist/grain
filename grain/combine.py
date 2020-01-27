@@ -4,6 +4,8 @@ from .resource import ZERO
 from math import inf as INFIN
 from contextlib import contextmanager
 from collections.abc import Iterable
+from functools import partial
+from inspect import signature
 
 import trio
 
@@ -16,10 +18,46 @@ async def exec1(res, fn, *args, **kwargs):
     if not Exec1:
         raise RuntimeError("`exec1` is only valid inside `run_combine`")
     return await Exec1(res, fn, *args, **kwargs)
-        
+
+async def load_cache_or_exec1(res, fn, *args, **kwargs):
+    """Run `fn.cache_fn` before running a job, then either
+    return the cached value or submit the job.
+    The cache function's signature should be a subset
+    of `fn`'s signature, with order preserved.
+    If `fn.cache_res` is not `ZERO`, the
+    cache_fn will be submitted to the queue.
+    """
+    sig_c = list(signature(fn.cache_fn).parameters.keys()) # unlike `getfullargspec` this unwrap decorators
+    kwargs_c = {}
+    while len(sig_c) > 0 and sig_c[-1] in kwargs:
+        k = sig_c.pop()
+        kwargs_c[k] = kwargs[k]
+    sig = list(signature(fn).parameters.keys())
+    args_c, i = [], 0
+    for k in sig_c:
+        while i < len(args) and sig[i] != k: i+=1
+        if i == len(args): raise ValueError(f"Cannot find a positional arg for parameter {k}")
+        args_c.append(args[i])
+
+    if fn.cache_res is ZERO: # "free" cache_fn
+        try:
+            ok, r = await fn.cache_fn(*args_c, **kwargs_c) # TODO: provide sync alternative?
+        except Exception:
+            ok = False
+    else:
+        ok, r = await exec1(fn.cache_res, fn.cache_fn, *args_c, **kwargs_c)
+    if ok:
+        return r
+    return await exec1(res, fn, *args, **kwargs)
+
 async def _grouped_task(gid, fn, *args, **kwargs):
     r = await fn(*args, **kwargs)
     return gid, r
+
+async def _run_and_send_result(chan, fn, *args, **kwargs):
+    r = await fn(*args, **kwargs)
+    chan.send_nowait(r)
+
 
 CombineGroup, Exec1 = None, None
 @contextmanager
@@ -45,8 +83,12 @@ def CombineGroup_ctxt(exer, push_newgroup):
             self.counter += 1
         def start_subtask(self, fn, *args, **kwargs):
             # tasks requesting zero resource would be executed locally
-            exer.submit(ZERO, _grouped_task, self.gid, fn, *args, **kwargs)
+            s, r = trio.open_memory_channel(1)
+            exer.submit(ZERO, _grouped_task, self.gid, r.receive)
+            _gn.start_soon(partial(_run_and_send_result, s, fn, *args, **kwargs))
             self.counter += 1
+        def load_cache_or_submit(self, res, fn, *args, **kwargs):
+            self.start_subtask(load_cache_or_exec1, res, fn, *args, **kwargs)
         async def __aenter__(self): # async part of __init__
             if self.counter > 0:
                 raise RuntimeError("attempt to re-enter a CombineGroup. For recursive use, create a new instance instead.")
@@ -71,7 +113,7 @@ def CombineGroup_ctxt(exer, push_newgroup):
     async def __Exec1(res, fn, *args, **kwargs):
         nonlocal gid
         g = gid = gid + 1
-        sq, rq = trio.open_memory_channel(0)
+        sq, rq = trio.open_memory_channel(1)
         push_newgroup.send_nowait( (-1, (g, sq)) )
         exer.submit(res, _grouped_task, g, fn, *args, **kwargs)
         async with rq, sq:
@@ -105,13 +147,14 @@ async def boot_combine(subtasks, args, kwargs):
                GrainExecutor(_n=_n, *args, **kwargs) as exer, \
                exer.push_result.clone() as push_newgroup:
         _n.start_soon(relay, exer.resultq)
+        global _gn # for all subtasks
         with CombineGroup_ctxt(exer, push_newgroup):
-            if isinstance(frames, Iterable):
-                async with trio.open_nursery() as _gn:
-                    for frame in frames:
-                        _gn.start_soon(frame)
-            else:
-                await frames()
+            async with trio.open_nursery() as _gn:
+                if isinstance(subtasks, Iterable):
+                    for st in subtasks:
+                        _gn.start_soon(st)
+                else:
+                    await subtasks()
 
-def run_combine(frames, *args, **kwargs):
-    trio.run(boot_combine, frames, args, kwargs)
+def run_combine(subtasks, *args, **kwargs):
+    trio.run(boot_combine, subtasks, args, kwargs)
