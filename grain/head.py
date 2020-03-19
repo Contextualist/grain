@@ -5,13 +5,16 @@ from copy import deepcopy
 from math import inf as INFIN
 from functools import partial
 import traceback
+from contextlib import redirect_stdout, redirect_stderr, ExitStack
+import sys
 
 from .contextvar import GVAR
-from .util import timeblock, WaitGroup, nullacontext, make_prependable
+from .util import timeblock, WaitGroup, nullacontext, optional_cm, make_prependable
 from .resource import ZERO
 from .pair import SocketChannel, SocketChannelAcceptor
 from .stat import log_event, stat_logger, ls_worker_res, reg_probe, collect_probe
 from .subproc import subprocess_pool_daemon, BrokenSubprocessError
+from .config import load_conf
 
 FULL_HEALTH = 3
 STATSPAN = 15 # minutes
@@ -48,7 +51,7 @@ class GrainRemote(object):
             self.resultq[tid], rq = trio.open_memory_channel(0)
             try:
                 await self._c.send(pickle.dumps((tid, res, fn)))
-                with trio.fail_after(res.T+180) if hasattr(res, 'T') else nullacontext(): # 3min grace period
+                with optional_cm(trio.fail_after, getattr(res,'T',-180)+180): # 3min grace period
                     ok, r = await rq.receive()
             except (trio.ClosedResourceError, trio.EndOfChannel):
                 # TODO: dedicated error class?
@@ -79,14 +82,26 @@ class GrainReverseRemote(GrainRemote):
     async def connect(self, _n):
         _n.start_soon(self._loop)
 
-GVAR.instance = "local"
+GVAR.instance = "N/A"
+class _cobj:
+    def __init__(self, fobj, dobj):
+        self._h, self._dh = fobj, dobj
+    def __getattr__(self, attr):
+        if GVAR.instance == "local":
+            return getattr(self._h, attr)
+        return getattr(self._dh, attr)
 class GrainPseudoRemote(object):
-    def __init__(self, res):
+    def __init__(self, res, out=""):
         self.res = res
         self.name = "local"
         self.health = FULL_HEALTH
         self.wg = WaitGroup()
         self.cg = set()
+        self.redi_cm = ExitStack()
+        if out:
+            outh = self.redi_cm.enter_context(open(out,'w'))
+            self.redi_cm.enter_context(redirect_stdout(_cobj(outh,sys.stdout)))
+            self.redi_cm.enter_context(redirect_stderr(_cobj(outh,sys.stderr)))
     async def connect(self, _n):
         if self.res > ZERO:
             self.cg.add(await _n.start(subprocess_pool_daemon))
@@ -95,8 +110,9 @@ class GrainPseudoRemote(object):
         self.cg.add(cs)
         with self.wg, cs:
             GVAR.res = res
+            GVAR.instance = "local"
             try:
-                with trio.fail_after(res.T) if hasattr(res, 'T') else nullacontext():
+                with optional_cm(trio.fail_after, getattr(res,'T',0)):
                     ok, r = True, await fn()
                     self.health = FULL_HEALTH
             except BaseException as e:
@@ -109,17 +125,19 @@ class GrainPseudoRemote(object):
             cs.cancel()
         print(f"worker {self.name} starts cleaning up")
         await self.wg.wait()
+        self.redi_cm.__exit__(None, None, None)
         print(f"worker {self.name} clear")
 
 
 class GrainManager(object):
     """Manage workers and resources.
     """
-    def __init__(self, pool_init, _n, temperr, persistent, interface=True):
+    def __init__(self, pool_init, _n, temperr, persistent, listen_addr):
         self.pool = pool_init
         self._n = _n
         self.temperr = {*set(temperr), BrokenSubprocessError}
         self.persistent = persistent
+        self.listen_addr = listen_addr
         self.cond_res = trio.Condition()
         self.soacceptor = None
 
@@ -161,7 +179,7 @@ class GrainManager(object):
                 raise RuntimeError(f"worker {name} exits, abort.")
     async def worker_manager(self, task_status=trio.TASK_STATUS_IGNORED):
         async with trio.open_nursery() as _n, \
-                   SocketChannelAcceptor(":4242", _n=_n) as self.soacceptor:
+                   SocketChannelAcceptor(self.listen_addr, _n=_n) as self.soacceptor:
             for w in self.pool:
                 await w.connect(_n)
             task_status.started()
@@ -221,6 +239,7 @@ class GrainExecutor(object):
         temporary_err=(), # exceptions that's not critical to shutdown a worker
         reschedule=True,  # if False, abort on any exception
         persistent=True,  # if False, abort on any worker's exit
+        config_file=None, # TOML grain config file name (Can be set by envar `GRAIN_CONFIG`)
      ):
         self.push_job, self.pull_job = trio.open_memory_channel(INFIN)
         self.push_job = make_prependable(self.push_job)
@@ -230,10 +249,11 @@ class GrainExecutor(object):
         self._n = _n
         self._wg = WaitGroup() # track the entire lifetime of each job
         self.reschedule = reschedule
+        conf_head = load_conf(config_file).head
         self.mgr = GrainManager(
-            [GrainPseudoRemote(deepcopy(rpw if not nolocal else ZERO))] + \
+            [GrainPseudoRemote(deepcopy(rpw if not nolocal else ZERO), conf_head.log_file)] + \
             [GrainRemote(a, deepcopy(rpw)) for a in waddrs],
-            self._n, temporary_err, persistent)
+            self._n, temporary_err, persistent, conf_head.listen)
         reg_probe("queued jobs", lambda: len(self.push_job._state.data))
 
     async def asubmit(self, res, fn, *args, **kwargs):
@@ -270,18 +290,16 @@ class GrainExecutor(object):
 
     async def run(self):
         reg_probe("next pending job's res", lambda: res)
-        try:
-            with timeblock("all jobs"):
-                async with self.mgr, \
-                           stat_logger(STATSPAN), \
-                           trio.open_nursery() as _n, \
-                           self.pull_job:
-                    async for tid, res, fn in self.pull_job:
-                        if not tid: tid = self.jobn = self.jobn+1
-                        res, w = await self.mgr.schedule(res)
-                        _n.start_soon(self.__task_with_res, tid, res, w, fn)
-        finally:
-            await self.push_result.aclose()
+        with timeblock("all jobs"):
+            async with self.mgr, \
+                       stat_logger(STATSPAN), \
+                       self.push_result, \
+                       trio.open_nursery() as _n, \
+                       self.pull_job:
+                async for tid, res, fn in self.pull_job:
+                    if not tid: tid = self.jobn = self.jobn+1
+                    res, w = await self.mgr.schedule(res)
+                    _n.start_soon(self.__task_with_res, tid, res, w, fn)
 
     async def __aenter__(self):
         self._n.start_soon(self.run)

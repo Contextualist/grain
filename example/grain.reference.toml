@@ -1,0 +1,83 @@
+# An example grain config file for generating worker
+# scripts. Entry marked as optional is showing its
+# default value. Strings like {{HHMMSS}} are
+# template-variable provided.
+# (e.g. `{{HHMMSS}}` will be replaced by hhmmss
+# representation of submission time). They are
+# evaluated during submission.
+# Try running `grain up -c THIS_FILE --dry` to see
+# the job script generated.
+
+# HPC job management system.
+# Supported: slurm, pbs, pbs_wrap
+system = "slurm"
+
+
+[head]
+
+# Name of head's job, if head is submitted as a HPC job
+name = "grain_head" # optional
+
+# Log of head's job, if head is submitted as a HPC job
+main_log_file = "/dev/null" # optional
+
+# Log of head's local worker
+log_file = "" # optional, default (i.e. empty str) to stdout
+
+# Head uses this address to listen for incoming commands or worker
+# connection.
+listen = ":4242" # optional
+
+# Script to invoke your entrypoint. It is used to
+# start the head process for `grain start`.
+cmd = '''
+python ENTRYPOINT.py
+'''
+
+
+# Override configs in `[script]` for head's job script.
+# `[worker.script]` does similarly for worker's job script.
+[head.script] # optional
+walltime = "24:00:00"
+
+
+[worker]
+
+# Name of a worker's job
+name = "w{{HHMMSS}}" # optional
+
+# Log of a worker's job
+log_file = "./w{{HHMMSS}}.log" # optional
+
+# Workers use this address to connect to the head.
+dial = "elogin1.bigred3.uits.iu.edu:4242"
+
+# Grain CLI uses this address to send queries and commands
+# to the head.
+cli_dial = "elogin1.bigred3.uits.iu.edu:4242" # optional, default to `worker.dial`
+
+
+# Parameters for filling out the HPC job script. Can be
+# overridden by `[head.script]` or `[worker.script]`.
+[script]
+
+shebang = "#!/bin/bash" # optional
+queue = "general"
+walltime = "12:00:00" # optional
+PPN = 48
+MPN = 60
+extra_args = [] # optional
+
+# `defer` is a magic statement that makes the cmd
+# in its line to be executed during clean up.
+# All the other lines are setup commands to be
+# executed before launching the worker process.
+setup_cleanup = '''
+module load /N/soft/cle6/modules/APPLICATIONS/gaussian/16
+
+export GAUSS_SCRDIR="/PATH/TO/GAUSCRDIR/$(hostname)"
+mkdir -p $GAUSS_SCRDIR
+defer rm -r $GAUSS_SCRDIR
+
+source ~/.zprofile
+'''

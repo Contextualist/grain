@@ -93,6 +93,10 @@ class nullacontext(object):
     async def __aenter__(self): return self
     async def __aexit__(self, *exc): return False
 
+def optional_cm(cm, cond_arg):
+    if cond_arg:
+        return cm(cond_arg)
+    return nullacontext()
 
 def set_numpy_oneline_repr():
     """Change the default Numpy array __repr__ to a

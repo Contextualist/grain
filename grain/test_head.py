@@ -1,14 +1,15 @@
 from .head import *
-from .resource import Memory
+from .resource import Memory, ZERO
 
 import pytest
 import trio
 from trio.testing import MockClock
 
 from functools import partial
+from io import StringIO
 
 sprint = partial(trio.run, clock=MockClock(rate=1000))
-
+GrainExecutor = partial(GrainExecutor, config_file="grain.pytest.toml")
 
 async def rev(n, i):
     await trio.sleep(n-i)
@@ -46,3 +47,20 @@ def test_local_lastjob_retry():
          GrainExecutor([], Memory(8), temporary_err=(Temporary,)) as exer:
         exer.submit(Memory(8), temporary_err_task)
     assert trial == FULL_HEALTH
+
+
+async def say_something():
+    print("something")
+
+def test_local_redirectouterr(capsys):
+    with GrainExecutor() as exer:
+        exer.submit(ZERO, say_something)
+    captured = capsys.readouterr()
+    assert captured.out.split('\n')[0] == "something"
+
+    with GrainExecutor(config_file=StringIO('''[head]
+listen = "tcp://:4243"
+log_file = "/dev/null"''')) as exer:
+        exer.submit(ZERO, say_something)
+    captured = capsys.readouterr()
+    assert captured.out.split('\n')[0] != "something"

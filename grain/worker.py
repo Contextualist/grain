@@ -31,7 +31,7 @@ async def grain_worker():
         sockopt = dict(addr=":4242", listen=True)
         print("passive mode enabled")
     else:
-        sockopt = dict(addr=f"{carg.head}:4242", dial=True)
+        sockopt = dict(addr=carg.head, dial=True)
         print(f"connecting to head {carg.head!r}...")
     async with trio.open_nursery() as _cn, \
                SocketChannel(**sockopt, _n=_cn) as so, \
@@ -56,7 +56,7 @@ async def grain_worker():
                 print(f"interrupted by {e.__class__.__name__}")
                 return # `GVAR.instance` might differ from head's record, so don't notify
             print(f"interrupted by {e.__class__.__name__}, notify head")
-            await notify(f"{carg.head}:4242", b"UNR"+GVAR.instance.encode(), seg=True)
+            await notify(carg.head, b"UNR"+GVAR.instance.encode(), seg=True)
             if (await so.receive()) != b"FIN": assert False
             print("received FIN from head, worker exits")
         finally:

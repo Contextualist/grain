@@ -1,0 +1,22 @@
+# A minimal example grain config file. For a
+# reference of complete, commented version,
+# check `grain.reference.toml`.
+
+system = "slurm"
+
+[head]
+cmd = '''
+python ENTRYPOINT.py
+'''
+
+[worker]
+dial = "elogin1.bigred3.uits.iu.edu"
+
+[script]
+queue = "general"
+PPN = 48
+MPN = 60
+
+setup_cleanup = '''
+# load modules, source profiles, make cache dir, etc.
+'''

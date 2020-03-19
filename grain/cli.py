@@ -1,81 +1,78 @@
 import click
-import toml
 import trio
 
 from grain.pair import SocketChannel, notify
+from grain.config import load_conf, setdefault
 
 from datetime import datetime
 import subprocess
 import tempfile
 from time import sleep
 import functools
-
-DEFAULT_CONF = {
-    "worker": {
-        "name": "w{{HHMMSS}}",
-        "log_filename": "w{{HHMMSS}}.log",
-        "script": {
-            "shebang": "#!/bin/bash",
-            "queue": "''",
-            "walltime": "12:00:00",
-            "extra_args": [],
-        }
-    }
-}
+from contextlib import contextmanager
+import sys
+import os
 
 VAR = { # replace any occurance of `{{key}}` with `value()`. Evaluate at each submission
     "HHMMSS": (lambda: datetime.now().strftime('%H%M%S')),
 }
 
-MAIN = """echo "worker {worker.name}'s node is $(hostname)"
+WORKER_MAIN = """echo "worker {name}'s node is $(hostname)"
 
-{worker.script.setup}
+{script.setup}
 
 date
-RES='Node(N={worker.script.PPN},M={worker.script.rMPN})&WTime("{worker.script.rwalltime}",countdown=True)'
-python -m grain.worker --head {head.addr} --res "$RES"
+RES='Node(N={script.PPN},M={script.rMPN})&WTime("{script.rwalltime}",countdown=True)'
+python -m grain.worker --url {worker.dial} --res "$RES"
 date
 
-{worker.script.cleanup}
+{script.cleanup}
+"""
+HEAD_MAIN = """echo "head's node is $(hostname)"
+
+{script.setup}
+
+{head.cmd}
+
+{script.cleanup}
 """
 
-SLURM_TEMP = """{worker.script.shebang}
-#SBATCH -J {worker.name}
-#SBATCH -p {worker.script.queue}
+SLURM_TEMP = """{script.shebang}
+#SBATCH -J {name}
+#SBATCH -p {script.queue}
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node={worker.script.PPN}
-#SBATCH --mem={worker.script.MPN}G
-#SBATCH --time={worker.script.walltime}
-#SBATCH -o {worker.log_dir}/{worker.log_filename}
-#SBATCH --export=ALL
-{worker.script.extra_args_str}
+#SBATCH --ntasks-per-node={script.PPN}
+#SBATCH --mem={script.MPN}G
+#SBATCH --time={script.walltime}
+#SBATCH -o {log_file}
+{script.extra_args_str}
 
 {{MAIN}}
 """
 
 # XXX: If this causes excessive use of vmem, use `PBSW_TEMP`
-PBS_TEMP = """{worker.script.shebang}
-#PBS -N {worker.name}
-#PBS -q {worker.script.queue}
-#PBS -l nodes=1:ppn={worker.script.PPN},walltime={worker.script.walltime}
-#PBS -l vmem={worker.script.MPN}gb
+PBS_TEMP = """{script.shebang}
+#PBS -N {name}
+#PBS -q {script.queue}
+#PBS -l nodes=1:ppn={script.PPN},walltime={script.walltime}
+#PBS -l vmem={script.MPN}gb
 #PBS -j oe
-#PBS -o {worker.log_dir}/{worker.log_filename}
-{worker.script.extra_args_str}
+#PBS -o {log_file}
+{script.extra_args_str}
 
 cd $PBS_O_WORKDIR
 {{MAIN}}
 """
 
 # CAVEATE: all PBS_* variables are lost
-PBSW_TEMP = """{worker.script.shebang}
-#PBS -N {worker.name}
-#PBS -q {worker.script.queue}
-#PBS -l nodes=1:ppn={worker.script.PPN},walltime={worker.script.walltime}
-#PBS -l vmem={worker.script.MPN}gb
+PBSW_TEMP = """{script.shebang}
+#PBS -N {name}
+#PBS -q {script.queue}
+#PBS -l nodes=1:ppn={script.PPN},walltime={script.walltime}
+#PBS -l vmem={script.MPN}gb
 #PBS -j oe
-#PBS -o {worker.log_dir}/{worker.log_filename}
-{worker.script.extra_args_str}
+#PBS -o {log_file}
+{script.extra_args_str}
 
 sshq=(ssh -q -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null)
 
@@ -92,6 +89,8 @@ MGR_SYS = {
     "pbs":      ("qsub",   "#PBS",    PBS_TEMP),
     "pbs_wrap": ("qsub",   "#PBS",    PBSW_TEMP),
 }
+
+QUERY_TIMEOUT = 5
 
 def eval_var(sc):
     for v, fn in VAR.items():
@@ -120,31 +119,10 @@ def eval_defer(setup_cleanup):
     cleanup.reverse()
     return '\n'.join(setup), '\n'.join(cleanup)
 
-def submit(scmd, sc, *args):
+def submit(scmd, sc, *args, env=None):
     with tempfile.NamedTemporaryFile(mode='w', dir=".", buffering=1) as f:
         f.write(sc)
-        subprocess.run([scmd, f.name, *args])
-
-
-class odict(dict):
-    def __init__(self, d):
-        d = { k:self.__attrify(k,v) for k, v in d.items() }
-        dict.__init__(self, d)
-    def __attrify(self, k, v):
-        if isinstance(v, (list, tuple)):
-           rv = [odict(x) if isinstance(x, dict) else x for x in v]
-        else:
-           rv = odict(v) if isinstance(v, dict) else v
-        setattr(self, k, rv)
-        return rv
-
-def setdefault(d, dflt): # NOTE: not dealing with list & tuple
-    for k,v in dflt.items():
-        if k not in d:
-            d[k] = v
-            continue
-        if isinstance(v, dict):
-            setdefault(d[k],v)
+        subprocess.run([scmd, f.name, *args], env={**os.environ, **env} if env else None)
 
 
 click.option = functools.partial(click.option, show_default=True)
@@ -153,11 +131,21 @@ def global_options(fn):
     @click.option('-c', '--config', default="grain.toml", envvar='GRAIN_CONFIG', help="Grain config file. Can be set by envar `GRAIN_CONFIG`")
     @functools.wraps(fn)
     def _wrapped(config, *args, **kwargs):
-        conf = toml.load(config)
-        setdefault(conf, DEFAULT_CONF)
-        conf = odict(conf)
-        return fn(conf=conf, *args, **kwargs)
+        return fn(conf=load_conf(config), *args, **kwargs)
     return _wrapped
+
+def gen_script(conf):
+    scriptc = conf.script
+    scriptc.rMPN = int(scriptc.MPN/15*14)
+    scriptc.walltime, scriptc.rwalltime = norm_wtime(scriptc.walltime)
+    scriptc.setup, scriptc.cleanup = eval_defer(scriptc.setup_cleanup)
+    try:
+        scmd, dirc, temp = MGR_SYS[conf.system.lower()]
+    except KeyError:
+        print(f"Unknown conf.system: {conf.system}")
+        sys.exit(1)
+    scriptc.extra_args_str = '\n'.join(f"{dirc} {l}" for l in scriptc.extra_args)
+    return scmd, temp
 
 @click.group(help="CLI tool to manage Grain workers")
 def main():
@@ -170,18 +158,10 @@ def main():
 @click.option('--dry', is_flag=True, help="Dry run. Print out the job submission script without submitting. This ignores `-n`.")
 @click.pass_context
 def up(ctx, conf, n, dry):
-    scriptc = conf.worker.script
-    scriptc.rMPN = int(scriptc.MPN/15*14)
-    scriptc.walltime, scriptc.rwalltime = norm_wtime(scriptc.walltime)
-    scriptc.setup, scriptc.cleanup = eval_defer(scriptc.setup_cleanup)
-
-    try:
-        scmd, dirc, temp = MGR_SYS[conf.worker.system.lower()]
-    except KeyError:
-        print(f"Unknown conf.worker.system: {conf.worker.system}")
-        return
-    scriptc.extra_args_str = '\n'.join(f"{dirc} {l}" for l in scriptc.extra_args)
-    sc = temp.replace("{{MAIN}}", MAIN).format(**conf)
+    setdefault(conf.worker.script, conf.script)
+    conf.script = conf.worker.script
+    scmd, temp = gen_script(conf)
+    sc = temp.replace("{{MAIN}}", WORKER_MAIN).format(**conf, name=conf.worker.name, log_file=conf.worker.log_file)
     if dry:
         print(eval_var(sc))
         return
@@ -189,29 +169,50 @@ def up(ctx, conf, n, dry):
         if i > 0: sleep(1)
         submit(scmd, eval_var(sc), *ctx.args)
 
+@main.command(help="Start the head process")
+@global_options
+@click.option('--local', is_flag=True, help="Run locally instead of submitting a job")
+@click.option('--dry', is_flag=True, help="Dry run. Print out the job submission script without submitting")
+def start(conf, local, dry):
+    setdefault(conf.head.script, conf.script)
+    conf.script = conf.head.script
+    scmd, temp = gen_script(conf)
+    sc = temp.replace("{{MAIN}}", HEAD_MAIN).format(**conf, name=conf.head.name, log_file=conf.head.main_log_file)
+    if dry:
+        print(eval_var(sc))
+        return
+    if local: # FIXME: relay SIGINT
+        submit(conf.script.shebang[2:], eval_var(sc), env=dict(PBS_O_WORKDIR=os.getcwd()))
+    else:
+        submit(scmd, eval_var(sc))
+
 @main.command(help="Overview of workers' status")
 @global_options
 def ls(conf):
     async def _ls(head):
-        try:
+        with _handle_connection_error(head):
             async with trio.open_nursery() as _n, \
-                       SocketChannel(f"{head}:4242", dial=True, _n=_n) as c:
+                       SocketChannel(f"{head}", dial=True, _n=_n) as c:
                 await c.send(b"STA")
                 print((await c.receive()).decode())
-        except OSError:
-            print(f"endpoint {head}:4242 is down")
-    trio.run(_ls, conf.head.addr)
+    trio.run(_ls, getattr(conf.worker, "cli_dial", conf.worker.dial))
 
 @main.command(help="Unregister a worker")
 @global_options
 @click.argument('worker_name')
 def unreg(conf, worker_name):
     async def _unreg(head, name):
-        try:
-            await notify(f"{head}:4242", b"UNR"+name.encode(), seg=True)
-        except OSError:
-            print(f"endpoint {head}:4242 is down")
-    trio.run(_unreg, conf.head.addr, worker_name)
+        with _handle_connection_error(head):
+            await notify(f"{head}", b"UNR"+name.encode(), seg=True)
+    trio.run(_unreg, getattr(conf.worker, "cli_dial", conf.worker.dial), worker_name)
+
+@contextmanager
+def _handle_connection_error(url):
+    try:
+        with trio.fail_after(QUERY_TIMEOUT):
+            yield
+    except (OSError, trio.TooSlowError):
+        print(f"unable to contact head through {url}")
 
 if __name__=="__main__":
     main()

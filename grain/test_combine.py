@@ -6,6 +6,8 @@ import trio
 
 from functools import partial
 
+run_combine = partial(run_combine, config_file="grain.pytest.toml")
+
 async def _anop():
     await trio.sleep(0)
 
