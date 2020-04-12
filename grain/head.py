@@ -12,8 +12,8 @@ from .contextvar import GVAR
 from .util import timeblock, WaitGroup, nullacontext, optional_cm, make_prependable
 from .resource import ZERO
 from .pair import SocketChannel, SocketChannelAcceptor
-from .stat import log_event, stat_logger, ls_worker_res, reg_probe, collect_probe
 from .subproc import subprocess_pool_daemon, BrokenSubprocessError
+from .stat import log_event, log_timestart, log_timeend, stat_logger, ls_worker_res, reg_probe, collect_probe
 from .config import load_conf
 
 FULL_HEALTH = 3
@@ -240,6 +240,7 @@ class GrainExecutor(object):
         reschedule=True,  # if False, abort on any exception
         persistent=True,  # if False, abort on any worker's exit
         config_file=None, # TOML grain config file name (Can be set by envar `GRAIN_CONFIG`)
+        stat_tag=lambda res: str(getattr(res,'T',"")), # define how timestat is categorized by resource
      ):
         self.push_job, self.pull_job = trio.open_memory_channel(INFIN)
         self.push_job = make_prependable(self.push_job)
@@ -255,6 +256,7 @@ class GrainExecutor(object):
             [GrainRemote(a, deepcopy(rpw)) for a in waddrs],
             self._n, temporary_err, persistent, conf_head.listen)
         reg_probe("queued jobs", lambda: len(self.push_job._state.data))
+        self.stat_tag = stat_tag
 
     async def asubmit(self, res, fn, *args, **kwargs):
         self._wg.add()
@@ -268,7 +270,10 @@ class GrainExecutor(object):
 
     async def __task_with_res(self, tid, res, w, fn):
         try:
+            tag = self.stat_tag(res)
+            if tag: log_timestart(tag, tid)
             ok, r = await w.execf(tid, res, fn)
+            if tag: log_timeend(tag, tid)
             if ok:
                 log_event("completed")
                 self.push_result.send_nowait((tid, r))
@@ -289,6 +294,7 @@ class GrainExecutor(object):
         await self.push_job.aclose()
 
     async def run(self):
+        res = None
         reg_probe("next pending job's res", lambda: res)
         with timeblock("all jobs"):
             async with self.mgr, \

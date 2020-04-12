@@ -7,23 +7,42 @@ from async_generator import asynccontextmanager
 
 MAXSPAN = 30 # in min
 
-all_event = {}
+punch_event = {}
 
 def log_event(ev):
     now = time.time()
-    global all_event
-    l = all_event.setdefault(ev, [])
+    l = punch_event.setdefault(ev, [])
     l.append(now)
     if len(l) > 1000: roll(l, now)
+
+time_event = {}
+
+def log_timestart(ev, uid):
+    tstmp, span, pending = time_event.setdefault(ev, ([], [], {}))
+    pending[uid] = time.time()
+def log_timeend(ev, uid):
+    now = time.time()
+    tstmp, span, pending = time_event[ev]
+    tstmp.append(now)
+    span.append(now-pending[uid])
+    del pending[uid]
+    if len(tstmp) > 1000:
+        roll(tstmp, now)
+        del span[:len(span)-len(tstmp)]
 
 def tally(span):
     if span > MAXSPAN:
         raise ValueError(f"span {span} is larger than MAXSPAN {MAXSPAN}")
     now = time.time()
     r = {}
-    for k,l in all_event.items():
+    for k,l in punch_event.items():
         roll(l, now)
-        r[k] = len(l) - bisect_right(l, now-span*60)
+        count = len(l) - bisect_right(l, now-span*60)
+        if count: r[k] = count
+    for k,(ts,sp,_) in time_event.items():
+        i0 = bisect_right(ts, now-span*60)
+        frq = len(ts) - i0
+        if frq: r[k] = f"{sum(sp[i0:])/frq:.3f}s*{frq}"
     return r
 
 @asynccontextmanager
