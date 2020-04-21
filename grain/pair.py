@@ -2,29 +2,26 @@ import trio
 
 from math import inf as INFIN
 from functools import partial
-import struct
-import io
+from urllib.parse import urlparse, parse_qsl
 
-# +--------+-----------+
-# | LEN(4) | DATA(LEN) |
-# +--------+-----------+
-FMT, LEN = '>L', 4 # unsigned long / uint32
+from .conn import iter_packet, send_packet, open_tcp_stream_to_head, serve_tcp_p2p
 
-async def notify(addr, msg, seg=False): # TODO: retry until connected
+async def notify(url, msg, seg=False): # TODO: retry until connected
     """Open a connection, send `msg`, then close the
     connection immediately.
     To be used with `listen_signal`.
     Or set `seg=True` to talk to `SocketChannel`.
     """
-    if seg:
-        msg = struct.pack(FMT,len(msg))+msg
-    host, port = parse_addr(addr)
-    async with await trio.open_tcp_stream(host, port, happy_eyeballs_delay=INFIN) as s:
-        await s.send_all(msg)
+    proto, host, port, opts = parse_url(url)
+    async with await open_tcp_stream(proto, host, port, opts) as s:
+        if seg:
+            await send_packet(s, msg)
+        else:
+            await s.send_all(msg)
 
 class SocketReceiveChannel(trio.abc.ReceiveChannel):
-    def __init__(self, addr, _n):
-        self.host, self.port = parse_addr(addr)
+    def __init__(self, url, _n):
+        self.proto, self.host, self.port, self.opts = parse_url(url)
         self.in_s, self.in_r = trio.open_memory_channel(INFIN)
         self._n = _n # for any background loops
         self._cs = trio.CancelScope() # for terminating all loops while keep _n intact
@@ -43,7 +40,8 @@ class EphemeralSocketReceiveChannel(SocketReceiveChannel):
     To be used with `notify`.
     """
     async def __aenter__(self):
-        await self._n.start(partial(serve_tcp, self._handler, self.port, host=self.host, cs=self._cs))
+        await self._n.start(partial(serve_tcp, self.proto, self._handler,
+                                    self.port, host=self.host, opts=self.opts, cs=self._cs))
         return self
     async def _handler(self, s):
         async with s: # one msg per connection
@@ -56,21 +54,22 @@ listen_signal = EphemeralSocketReceiveChannel
 
 class SocketChannel(trio.abc.SendChannel, SocketReceiveChannel):
     """Dial to one endpoint / accept one connection in
-    order to setup a single deplex connection.
+    order to setup a single duplex connection.
     Alternatively, pass in a connected socket stream.
     `receive` returns item type of `data: byte`
     """
-    def __init__(self, addr, _n=None, listen=False, dial=False, _so=None):
-        SocketReceiveChannel.__init__(self, addr, _n)
+    def __init__(self, url, _n=None, listen=False, dial=False, _so=None):
+        SocketReceiveChannel.__init__(self, url, _n)
         self._send_lock = trio.Lock()
-        assert listen != dial or _so is not None
+        assert (listen != dial and _n is not None) or _so is not None
         self._so, self.listen, self.dial = _so, listen, dial
         self.is_clean = True
     async def __aenter__(self):
         if self.listen:
-            await self._n.start(partial(serve_tcp, self._handler, self.port, host=self.host, cs=self._cs))
+            await self._n.start(partial(serve_tcp, self.proto, self._handler,
+                                        self.port, host=self.host, opts=self.opts, cs=self._cs))
         elif self.dial:
-            self._so = await trio.open_tcp_stream(self.host, self.port, happy_eyeballs_delay=INFIN)
+            self._so = await open_tcp_stream(self.proto, self.host, self.port, self.opts)
             self._n.start_soon(self._handler_standalone, self._so)
         return self
     async def _handler(self, s):
@@ -88,9 +87,8 @@ class SocketChannel(trio.abc.SendChannel, SocketReceiveChannel):
     async def send(self, data):
         if not self._so: raise TypeError("socket not connected")
         if not data: return
-        size = struct.pack(FMT, len(data))
         async with self._send_lock:
-            await self._so.send_all(size+data)
+            await send_packet(self._so, data)
     async def try_send(self, data):
         try:
             await self.send(data)
@@ -110,43 +108,40 @@ class SocketChannelAcceptor(SocketReceiveChannel):
     close any child `SocketChannel`.
     """
     async def __aenter__(self):
-        await self._n.start(partial(serve_tcp, self._handler, self.port, host=self.host,
-                                               handler_nursery=self._n, cs=self._cs))
+        await self._n.start(partial(serve_tcp, self.proto, self._handler, self.port, host=self.host,
+                                    handler_nursery=self._n, opts=self.opts, cs=self._cs))
         return self
-    async def _handler(self, so): # run under `self._n`
+    async def _handler(self, so):
         host, port = so.socket.getpeername()
-        c = SocketChannel(f"{host}:{port}", _so=so)
+        c = SocketChannel(f"tcp://{host}:{port}", _so=so)
         self.in_s.send_nowait(c)
         await c._handler_standalone(so) # to have the same lifetime as c
     accept = SocketReceiveChannel.receive
 
 
+async def open_tcp_stream(proto, host, port, opts=None):
+    if proto == "tcp":
+        return await trio.open_tcp_stream(host, port, happy_eyeballs_delay=INFIN)
+    elif proto == "bridge":
+        assert opts
+        return await open_tcp_stream_to_head(bridge=(host, port), **opts)
+
 # adapted from `trio.serve_tcp`, adding a CancelScope that terminates the listeners
-async def serve_tcp(handler, port, cs, *, host=None, handler_nursery=None, task_status=trio.TASK_STATUS_IGNORED):
+async def serve_tcp(proto, handler, port, cs, *, host=None, handler_nursery=None, opts=None, task_status=trio.TASK_STATUS_IGNORED):
     with cs:
-        listeners = await trio.open_tcp_listeners(port, host=host)
-        await trio.serve_listeners(handler, listeners, handler_nursery=handler_nursery, task_status=task_status)
+        if proto == "tcp":
+            listeners = await trio.open_tcp_listeners(port, host=host)
+            await trio.serve_listeners(handler, listeners, handler_nursery=handler_nursery, task_status=task_status)
+        elif proto == "bridge":
+            assert opts
+            await serve_tcp_p2p(handler, bridge=(host,port), handler_nursery=handler_nursery, task_status=task_status, **opts)
 
-
-def parse_addr(host_port):  
-    host, port = host_port.split(':')
-    if not host: host = "0.0.0.0"
-    return host, int(port)
-
-async def iter_packet(s: trio.abc.ReceiveStream):
-    while True:
-        try:
-            plen, = struct.unpack(FMT, await receive_exactly(s, LEN))
-            yield await receive_exactly(s, plen)
-        except (EOFError, trio.BrokenResourceError):
-            return
-
-async def receive_exactly(s: trio.abc.ReceiveStream, n):
-    buf = io.BytesIO()
-    while n > 0:
-        data = await s.receive_some(n)
-        if data == b"":
-            raise EOFError("end of receive stream")
-        buf.write(data)
-        n -= len(data)
-    return buf.getvalue()
+def parse_url(url):
+    u = urlparse(url)
+    if u.scheme == "tcp":
+        return u.scheme, u.hostname, u.port, {}
+    elif u.scheme == "bridge":
+        assert u.username, "a session key must be specified for the bridge protocol"
+        return u.scheme, u.hostname, u.port, { "key": u.username, **dict(parse_qsl(u.query)) }
+    else:
+        raise ValueError(f"Unsupported protocol {u.scheme!r}")

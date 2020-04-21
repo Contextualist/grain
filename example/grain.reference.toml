@@ -6,7 +6,7 @@
 # representation of submission time). They are
 # evaluated during submission.
 # Try running `grain up -c THIS_FILE --dry` to see
-# the job script generated.
+# the worker job script generated.
 
 # HPC job management system.
 # Supported: slurm, pbs, pbs_wrap
@@ -24,9 +24,11 @@ main_log_file = "/dev/null" # optional
 # Log of head's local worker
 log_file = "" # optional, default (i.e. empty str) to stdout
 
-# Head uses this address to listen for incoming commands or worker
-# connection.
-listen = ":4242" # optional
+# Head uses this URL to listen for incoming commands or worker
+# connection. Supported protocols:
+# TCP: "tcp://:{port}"
+# Bridge: "bridge://{key}@{bridge_addr}:{bridge_port}[?iface={interface}]"
+listen = "tcp://:4242" # optional
 
 # Script to invoke your entrypoint. It is used to
 # start the head process for `grain start`.
@@ -49,12 +51,15 @@ name = "w{{HHMMSS}}" # optional
 # Log of a worker's job
 log_file = "./w{{HHMMSS}}.log" # optional
 
-# Workers use this address to connect to the head.
-dial = "elogin1.bigred3.uits.iu.edu:4242"
+# Workers use this URL to connect to the head.
+# Supported protocols:
+# TCP: "tcp://{addr}:{port}"
+# Bridge: "bridge://{key}@{bridge_addr}:{bridge_port}[?iface={interface}]"
+dial = "tcp://elogin1.bigred3.uits.iu.edu:4242"
 
-# Grain CLI uses this address to send queries and commands
+# Grain CLI uses this URL to send queries and commands
 # to the head.
-cli_dial = "elogin1.bigred3.uits.iu.edu:4242" # optional, default to `worker.dial`
+cli_dial = "tcp://elogin1.bigred3.uits.iu.edu:4242" # optional, default to `worker.dial`
 
 
 # Parameters for filling out the HPC job script. Can be

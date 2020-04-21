@@ -18,6 +18,7 @@ from .config import load_conf
 
 FULL_HEALTH = 3
 STATSPAN = 15 # minutes
+HEARTBEAT_INTERVAL, HEARTBEAT_TOLERANCE = 10, 3 # 10s * 3
 
 class GrainRemote(object):
     def __init__(self, addr, res):
@@ -28,9 +29,26 @@ class GrainRemote(object):
         self.wg = WaitGroup()
         self.resultq = {}
     async def _loop(self, task_status=trio.TASK_STATUS_IGNORED):
+        async def heartbeat_s(c):
+            while True:
+                await c.try_send(b"HBT")
+                await trio.sleep(HEARTBEAT_INTERVAL)
+        async def heartbeat_n_receive(c):
+            async with trio.open_nursery() as _n:
+                _n.start_soon(heartbeat_s, c)
+                while True:
+                    with trio.move_on_after(HEARTBEAT_INTERVAL*HEARTBEAT_TOLERANCE):
+                        async for x in c:
+                            if x == b"HBT": break
+                            yield x
+                        else: break
+                        continue
+                    print(f"remote {self.name} heartbeat response timeout")
+                    break
+                _n.cancel_scope.cancel()
         async with self._c:
             task_status.started()
-            async for x in self._c:
+            async for x in heartbeat_n_receive(self._c):
                 tid, r = pickle.loads(x)
                 rq = self.resultq.get(abs(tid))
                 if rq:
@@ -39,12 +57,12 @@ class GrainRemote(object):
                     log_event("late_response")
                     print(f"remote {self.name} received phantom job {abs(tid)}'s result")
         # well, we just let the remote decide when to leave
-        assert self._c.is_clean is False
+        #assert self._c.is_clean is False # NOTE: P2P conn doesn't get EOF when the other end quit, we need to close on our end
         # In case of connection lost, dismiss all pending jobs
         for rq in list(self.resultq.values()): # frozen
             await rq.aclose()
     async def connect(self, _n):
-        self._c = SocketChannel(f"{self.name}:4242", dial=True, _n=_n)
+        self._c = SocketChannel(f"tcp://{self.name}:4242", dial=True, _n=_n)
         await _n.start(self._loop)
     async def execf(self, tid, res, fn):
         with self.wg:
@@ -66,6 +84,7 @@ class GrainRemote(object):
         await self._c.try_send(b"FIN") # fails if KI or connection lost
         print(f"worker {self.name} starts cleaning up")
         await self.wg.wait()
+        await self._c.aclose() # for P2P connection
         print(f"worker {self.name} clear")
 
 class GrainReverseRemote(GrainRemote):
@@ -152,7 +171,8 @@ class GrainManager(object):
         async with self.cond_res:
             w.health -= 1 if type(err) in self.temperr else INFIN
             if w.health <= 0 and w in self.pool:
-                print(tb)
+                if type(err) not in self.temperr:
+                    print(tb)
                 if w.name == 'local': raise RuntimeError("local worker quits")
                 print(f"quit worker {w.name} due to poor health {w.health}")
                 await self.unregister(w.name, locked=True)

@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="grain",
-    version="0.11.0",
+    version="0.12.0",
     author="Harry Zhang",
     author_email="zhanghar@iu.edu",
     description="A scheduler for resource-aware parallel computing on clusters.",
@@ -23,6 +23,7 @@ setuptools.setup(
     ],
     tests_require = [
         "pytest",
+        "pytest-trio",
     ],
     entry_points = {
         "console_scripts": ["grain=grain.cli:main"],

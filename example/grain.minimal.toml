@@ -10,7 +10,7 @@ python ENTRYPOINT.py
 '''
 
 [worker]
-dial = "elogin1.bigred3.uits.iu.edu"
+dial = "tcp://elogin1.bigred3.uits.iu.edu:4242"
 
 [script]
 queue = "general"
