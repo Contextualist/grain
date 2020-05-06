@@ -88,6 +88,7 @@ class Cores(Resource): # CPU cores
             self.c = set(N)
             self.N = len(N)
     def _repr(self):
+        if self.N == 0: return "CPU_Cores([])"
         first, *c = sorted(self.c)
         con = [[first,first]]
         for x in c:
@@ -156,7 +157,7 @@ class WTime(Resource): # walltime, not restorable
         self.T = T
         self.softT = softT or T
     def _repr(self):
-        t = int(self.deadline - time.time()) if self.deadline else self.T
+        t = max(int(self.deadline - time.time()), 0) if self.deadline else self.T
         return f"Walltime({t//3600:02}:{t%3600//60:02}:{t%60:02})"
 
     def _request(self, res): # loose condition
