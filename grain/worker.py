@@ -4,6 +4,7 @@ import dill as pickle
 from functools import partial
 import traceback
 import argparse
+import time
 
 from .contextvar import GVAR
 from .resource import *
@@ -23,16 +24,19 @@ async def exerf(tid, res, func, so):
             cleanup_scope.shield = True
             await so.send(pickle.dumps((tid, r)))
 
-async def grain_worker():
-    RES = eval(carg.res) # FIXME: better way to define res
-    timesc = trio.fail_after(RES.T) if hasattr(RES, 'T') else nullcontext()
-    passive = not (carg.url and RES)
+NO_NEXT_URL = "NO_NEXT_URL"
+
+async def grain_worker(RES, url):
+    timesc = nullcontext()
+    if hasattr(RES, 'T'):
+        timesc = trio.fail_after(max(int(RES.deadline - time.time()), 0))
+    passive = not (url and RES)
     if passive:
         sockopt = dict(url="tcp://:4242", listen=True)
         print("passive mode enabled")
     else:
-        sockopt = dict(url=carg.url, dial=True)
-        print(f"connecting to head using {carg.url!r}...")
+        sockopt = dict(url=url, dial=True) # TODO: connection timeout
+        print(f"connecting to head using {url!r}...")
     async with trio.open_nursery() as _cn, \
                SocketChannel(**sockopt, _n=_cn) as so, \
                trio.open_nursery() as _n:
@@ -45,25 +49,35 @@ async def grain_worker():
                 async for msg in so:
                     if msg == b"FIN": # end of queue / low health / server error
                         print("received FIN from head, worker exits")
-                        break
+                        return NO_NEXT_URL
                     elif msg == b"HBT": # heartbeat
                         await so.send(b"HBT")
                         continue
+                    elif msg[:3] == b"REC": # reconnect
+                        return msg[3:].decode()
                     tid, res, fn = pickle.loads(msg)
                     _n.start_soon(exerf, tid, res, fn, so)
                 else:
                     print("connection to head lost, worker exits")
                     so.send = anop
+                    return url # connection loss, reconnect to the same addr?
         except BaseException as e:
             if passive:
                 print(f"interrupted by {e.__class__.__name__}")
-                return # `GVAR.instance` might differ from head's record, so don't notify
+                return NO_NEXT_URL # `GVAR.instance` might differ from head's record, so don't notify
             print(f"interrupted by {e.__class__.__name__}, notify head")
-            await notify(carg.url, b"UNR"+GVAR.instance.encode(), seg=True)
+            await notify(url, b"UNR"+GVAR.instance.encode(), seg=True)
             if (await so.receive()) != b"FIN": assert False
             print("received FIN from head, worker exits")
+            return NO_NEXT_URL
         finally:
             _n.cancel_scope.cancel()
+
+async def __loop():
+    RES = eval(carg.res) # FIXME: better way to define res
+    url = carg.url
+    while url != NO_NEXT_URL:
+        url = await grain_worker(RES, url)
 
 class nullcontext(object):
     def __enter__(self): return self
@@ -82,4 +96,4 @@ if __name__ == "__main__":
     carg = argp.parse_args()
 
     GVAR.instance = trio.socket.gethostname()
-    trio.run(grain_worker)
+    trio.run(__loop)
