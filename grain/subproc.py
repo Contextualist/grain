@@ -1,4 +1,5 @@
 import trio
+from async_generator import asynccontextmanager
 import dill as pickle
 
 from functools import wraps, partial
@@ -8,7 +9,7 @@ import os
 from math import inf as INFIN
 from subprocess import SubprocessError
 
-from .contextvar import GVAR # process local
+from grain.contextvar import GVAR # process local
 
 IDLE_TIMEOUT = 60 # keep idle subprocess for 1min
 
@@ -40,10 +41,24 @@ def subprocify(fn):
 _sn = None
 idle_subp = set()
 
+@asynccontextmanager
+async def subprocess_pool_scope(): # process local
+    """Initialize the nursery for subprocess workers
+    """
+    global _sn
+    if _sn is not None and not _sn._closed:
+        yield
+        return
+    async with trio.open_nursery() as _sn:
+        yield
+        _sn.cancel_scope.cancel()
 async def subprocess_pool_daemon(task_status=trio.TASK_STATUS_IGNORED): # process local
     """Initialize the nursery for subprocess workers
     """
     global _sn
+    if _sn is not None and not _sn._closed:
+        task_status.started(_sn.cancel_scope)
+        return
     async with trio.open_nursery() as _sn:
         task_status.started(_sn.cancel_scope)
         await trio.sleep_forever()

@@ -14,8 +14,8 @@ def exerf(GVAR, func):
         signal.alarm(timeout)
     core = getattr(GVAR.res, 'c', [])
     try:
-        if len(core) != 1: # This Python interpreter proc by default takes 1 proc and ~40mb vmem.
-            raise TypeError(f"Job resource {GVAR.res} does not define one and only core")
+        if len(core) == 0: # NOTE: This Python interpreter proc by default takes 1 proc and ~40mb vmem.
+            raise TypeError(f"Subprocess job resource expects at least core, get {GVAR.res} instead")
         psutil.Process().cpu_affinity(core)
         return True, func()
     except BaseException as e:
