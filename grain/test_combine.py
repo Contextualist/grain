@@ -1,5 +1,5 @@
 from .combine import *
-from .resource import Memory
+from .resource import ZERO
 
 import pytest
 import trio
@@ -16,10 +16,19 @@ class Critical(Exception):
 
 async def _main_subtask(i):
     async with open_waitgroup() as wg:
-        wg.submit(Memory(0), _anop)
+        wg.submit(ZERO, _anop)
     if i == 1:
         raise Critical
 
 def test_main_subtask_exception():
     with pytest.raises(Critical):
-        run_combine([partial(_main_subtask, i) for i in range(10)], [], Memory(0))
+        run_combine([partial(_main_subtask, i) for i in range(10)], [], ZERO)
+
+async def _top_serial():
+    for _ in range(3):
+        async with open_waitgroup() as wg:
+            wg.submit(ZERO, _anop)
+        assert wg.results == [None]
+
+def test_top_serial():
+    run_combine(_top_serial, [], ZERO)

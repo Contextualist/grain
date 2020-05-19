@@ -7,7 +7,7 @@ DEFAULT_CONF = {
         "name": "grain_head",
         "main_log_file": "/dev/null",
         "log_file": "",
-        "listen": ":4242",
+        "listen": "tcp://:4242",
         "script": {},
     },
     "worker": {
@@ -24,7 +24,12 @@ DEFAULT_CONF = {
 }
 
 def load_conf(config=None):
-    conf = toml.load(config or ENV.get("GRAIN_CONFIG", "grain.toml"))
+    config = config or ENV.get("GRAIN_CONFIG", "grain.toml")
+    try:
+        conf = toml.load(config)
+    except FileNotFoundError:
+        print(f"Cannot find Grain config file {config!r}, using default settings.")
+        conf = {}
     setdefault(conf, DEFAULT_CONF)
     return odict(conf)
 

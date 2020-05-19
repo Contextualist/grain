@@ -29,23 +29,23 @@ class Critical(Exception):
 class Temporary(Exception):
     pass
 
-def critical_err_task():
+async def critical_err_task():
     raise Critical
 trial = 0
-def temporary_err_task():
+async def temporary_err_task():
     global trial
     trial += 1
     raise Temporary
 
 def test_local_critical():
     with pytest.raises(RuntimeError, match="local worker quit"), \
-         GrainExecutor([], Memory(8)) as exer:
-        exer.submit(Memory(8), critical_err_task)
+         GrainExecutor() as exer:
+        exer.submit(ZERO, critical_err_task)
 
 def test_local_lastjob_retry():
     with pytest.raises(RuntimeError, match="local worker quit"), \
-         GrainExecutor([], Memory(8), temporary_err=(Temporary,)) as exer:
-        exer.submit(Memory(8), temporary_err_task)
+         GrainExecutor(temporary_err=(Temporary,)) as exer:
+        exer.submit(ZERO, temporary_err_task)
     assert trial == FULL_HEALTH
 
 

@@ -27,7 +27,8 @@ i.e. i: parallel, j: sequential, a/b: parallel
 """
 
 import trio
-from grain import run_combine, open_waitgroup, Node, GVAR
+from grain import run_combine, open_waitgroup, GVAR
+from grain.resource import Node
 
 from functools import partial
 
@@ -57,9 +58,9 @@ async def job(x):
 async def frame(i):
     for j in range(2):
         async with open_waitgroup() as wg:
-            wg.submit(Node(N=1,M=8), job, f'{i},{j},a')
-            wg.submit(Node(N=1,M=8), job, f'{i},{j},b')
-        print(f"{i},{j}: {wg.results}")
+            wg.submit(Node(N=1,M=8), job, f'{i}-{j}-a')
+            wg.submit(Node(N=1,M=8), job, f'{i}-{j}-b')
+        print(f"{i}-{j}: {wg.results}")
 
 
 jobs = [partial(frame, i) for i in range(2)]
@@ -70,6 +71,5 @@ jobs = [partial(frame, i) for i in range(2)]
 #            wg.start_subtask(frame, i)
 #jobs = main
 
-# []      : no workers -- run jobs on local only
-# Node(...: total resources
-run_combine(jobs, [], Node(N=4,M=24))
+# rpw: resource per worker; this is for the only local worker
+run_combine(jobs, rpw=Node(N=4,M=24))
