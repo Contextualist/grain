@@ -11,6 +11,9 @@ from .resource import *
 from .pair import notify, SocketChannel
 from .subproc import subprocess_pool_daemon
 
+pickle_dumps = partial(pickle.dumps, protocol=4)
+pickle_loads = pickle.loads
+
 async def exerf(tid, res, func, so):
     GVAR.res = res
     try:
@@ -22,7 +25,7 @@ async def exerf(tid, res, func, so):
     finally:
         with trio.move_on_after(3) as cleanup_scope:
             cleanup_scope.shield = True
-            await so.send(pickle.dumps((tid, r)))
+            await so.send(pickle_dumps((tid, r)))
 
 NO_NEXT_URL = "NO_NEXT_URL"
 
@@ -42,7 +45,7 @@ async def grain_worker(RES, url):
                trio.open_nursery() as _n:
         await _n.start(subprocess_pool_daemon)
         if not passive:
-            await so.send(b"CON"+pickle.dumps((GVAR.instance, RES)))
+            await so.send(b"CON"+pickle_dumps((GVAR.instance, RES)))
         print("worker launched")
         try:
             with timesc:
@@ -55,7 +58,7 @@ async def grain_worker(RES, url):
                         continue
                     elif msg[:3] == b"REC": # reconnect
                         return msg[3:].decode()
-                    tid, res, fn = pickle.loads(msg)
+                    tid, res, fn = pickle_loads(msg)
                     _n.start_soon(exerf, tid, res, fn, so)
                 else:
                     print("connection to head lost, worker exits")

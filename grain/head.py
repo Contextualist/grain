@@ -20,6 +20,9 @@ FULL_HEALTH = 3
 STATSPAN = 15 # minutes
 HEARTBEAT_INTERVAL, HEARTBEAT_TOLERANCE = 10, 3 # 10s * 3
 
+pickle_dumps = partial(pickle.dumps, protocol=4)
+pickle_loads = pickle.loads
+
 class GrainRemote(object):
     def __init__(self, addr, res):
         self._c = None
@@ -49,7 +52,7 @@ class GrainRemote(object):
         async with self._c:
             task_status.started()
             async for x in heartbeat_n_receive(self._c):
-                tid, r = pickle.loads(x)
+                tid, r = pickle_loads(x)
                 rq = self.resultq.get(abs(tid))
                 if rq:
                     await rq.send((tid>0, r))
@@ -68,7 +71,7 @@ class GrainRemote(object):
         with self.wg:
             self.resultq[tid], rq = trio.open_memory_channel(0)
             try:
-                await self._c.send(pickle.dumps((tid, res, fn)))
+                await self._c.send(pickle_dumps((tid, res, fn)))
                 with optional_cm(trio.fail_after, getattr(res,'T',-180)+180): # 3min grace period
                     ok, r = await rq.receive()
             except (trio.ClosedResourceError, trio.EndOfChannel):
@@ -210,13 +213,13 @@ class GrainManager(object):
                     continue
                 cmd, msg = msg[:3], msg[3:]
                 if cmd == b"CON": # connect
-                    vaddr, res = pickle.loads(msg)
+                    vaddr, res = pickle_loads(msg)
                     print(f"worker {vaddr} joined with {res}")
                     await self.register(GrainReverseRemote(_c, vaddr, res), _n)
                     continue
                 async with _c: # The following are ephemeral cmds
                     if cmd == b"REG": # register
-                        addr, res = pickle.loads(msg)
+                        addr, res = pickle_loads(msg)
                         print(f"worker {addr} joined with {res}")
                         await self.register(GrainRemote(addr, res), _n)
                     elif cmd == b"UNR": # unregister
