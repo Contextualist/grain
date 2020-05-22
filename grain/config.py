@@ -21,9 +21,13 @@ DEFAULT_CONF = {
         "walltime": "12:00:00",
         "extra_args": [],
     },
+    "custom_system": {},
 }
 
 def load_conf(config=None):
+    if config is False:
+        print("Config file is disabled, using default settings.")
+        return odict(DEFAULT_CONF)
     config = config or ENV.get("GRAIN_CONFIG", "grain.toml")
     try:
         conf = toml.load(config)

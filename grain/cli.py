@@ -1,8 +1,8 @@
 import click
 import trio
 
-from grain.pair import SocketChannel, notify
-from grain.config import load_conf, setdefault
+from .pair import SocketChannel, notify
+from .config import load_conf, setdefault
 
 from datetime import datetime
 import subprocess
@@ -139,11 +139,14 @@ def gen_script(conf):
     scriptc.rMPN = int(scriptc.MPN/15*14)
     scriptc.walltime, scriptc.rwalltime = norm_wtime(scriptc.walltime)
     scriptc.setup, scriptc.cleanup = eval_defer(scriptc.setup_cleanup)
-    try:
-        scmd, dirc, temp = MGR_SYS[conf.system.lower()]
-    except KeyError:
-        print(f"Unknown conf.system: {conf.system}")
-        sys.exit(1)
+    if conf.custom_system:
+        scmd, dirc, temp = conf.custom_system.submit_cmd, conf.custom_system.directory, conf.custom_system.template
+    else:
+        try:
+            scmd, dirc, temp = MGR_SYS[conf.system.lower()]
+        except KeyError:
+            print(f"Unknown conf.system: {conf.system}")
+            sys.exit(1)
     scriptc.extra_args_str = '\n'.join(f"{dirc} {l}" for l in scriptc.extra_args)
     return scmd, temp
 
