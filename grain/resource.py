@@ -1,4 +1,5 @@
-__all__ = ["Resource", "ZERO", "Cores", "Memory", "Node", "WTime", "res2link0"]
+__all__ = ["Resource", "ZERO", "Cores", "Memory", "Node", "WTime", "Token", "Capacity",
+           "ONE_INSTANCE", "Reject", "REJECT", "res2link0"]
 
 class Resource(object):
     def _request(self, res):
@@ -46,6 +47,8 @@ class Resource(object):
         return other.request(self)
     def __lt__(self, other):
         return not self.request(other)
+    def __eq__(self, other):
+        return self.request(other) and other.request(self)
 
     def request(self, res):
         for k,v in res.__resm.items():
@@ -173,6 +176,83 @@ class WTime(Resource): # walltime, not restorable
 
     def _stat(self):
         return 1, 1
+
+
+class Token(Resource):
+
+    def __init__(self, token):
+        super().__init__()
+        self.token = token
+    def _repr(self):
+        return f"Token({self.token})"
+
+    def _request(self, res):
+        return self.token == res.token
+
+    def _alloc(self, res):
+        if not self._request(res):
+            raise ValueError(f"{self} does not match {res}")
+        return res
+
+    def _dealloc(self, res):
+        pass
+
+    def _stat(self):
+        return 1, 1
+
+
+class Capacity(Resource):
+
+    def __init__(self, V):
+        super().__init__()
+        self.V = self.v = V
+    def _repr(self):
+        return f"Capacity({self.v})" if self.v != -1 else "ONE"
+
+    def _request(self, res):
+        return self.v > 0
+
+    def _alloc(self, res):
+        if not self._request(res):
+            raise ValueError(f"{self} has no capacity")
+        self.v -= 1
+        return res
+
+    def _dealloc(self, res):
+        self.v += 1
+
+    def _stat(self):
+        return self.v, self.V
+
+ONE_INSTANCE = Capacity(-1) # for requester
+# This is not ideal as ONE_INSTANCE != ONE_INSTANCE
+
+
+class Reject(Resource):
+    """Similar to `ZERO`, but uncondionally suppress
+    all request/alloc and absorb dealloc
+    """
+    def __init__(self, wrap=ZERO):
+        super().__init__(init=False)
+        self.__self = wrap
+    def __repr__(self):
+        return "N/A"
+    def __and__(self, other):
+        return self
+
+    def request(self, res):
+        return False
+    def alloc(self, res):
+        raise ValueError("No resource is or will be available")
+    def dealloc(self, res):
+        self.__self.dealloc(res) # Blackhole
+    def stat(self):
+        return self.__self.stat()
+
+    def eject(self):
+        return self.__self
+
+REJECT = Reject()
 
 
 def res2link0(res):

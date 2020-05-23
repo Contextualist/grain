@@ -5,8 +5,8 @@ import pytest
 def test_zero():
     # repr
     assert str(ZERO) == "Ø"
-    assert ZERO.request(ZERO)
     # request, alloc
+    assert ZERO.request(ZERO)
     assert str(ZERO.alloc(ZERO)) == "Ø"
     some = Node(1,1)
     assert some.request(ZERO)
@@ -63,6 +63,40 @@ def test_walltime(monkeypatch):
     now += 2.0
     assert t2.request(WTime(29)) is False
     assert t2.alloc(WTime(3)).T == 3
+
+def test_token():
+    # repr
+    assert str(Token('A')) == "Token(A)"
+    # request, alloc
+    a = Token('A')
+    assert a.request(Token('A'))
+    assert a.request(Token('B')) is False
+    assert a.alloc(Token('A')) == a
+    assert a.request(Token('A'))
+
+def test_capacity():
+    # repr
+    assert str(Capacity(0)) == "Capacity(0)"
+    assert str(ONE_INSTANCE) == "ONE"
+    # request, alloc
+    c = Capacity(1)
+    assert c.request(ONE_INSTANCE)
+    assert c.alloc(ONE_INSTANCE).v == -1
+    assert c.v==0
+    with pytest.raises(ValueError, match="has no capacity"):
+        c.alloc(ONE_INSTANCE)
+    # dealloc
+    c.dealloc(ONE_INSTANCE)
+    assert c.v==c.V==1
+
+def test_reject():
+    # request
+    assert REJECT.request(ZERO) is False
+    r = Reject(Memory(8))
+    r.dealloc(Memory(4))
+    assert r.request(Memory(8)) is False
+    # eject
+    assert r.eject() == Memory(12)
 
 def test_multiresource():
     # repr
