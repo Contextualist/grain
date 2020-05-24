@@ -39,6 +39,7 @@ def aretry(attempts=3, dropafter=180, errtype=Exception, silent=False, kwargs1=N
 import trio
 from trio.hazmat import ParkingLot, checkpoint, enable_ki_protection
 from outcome import Value
+from async_generator import asynccontextmanager
 
 class WaitGroup(object):
 
@@ -85,6 +86,26 @@ def cutin_nowait(self, value):
 def make_prependable(mschan):
     mschan.cutin_nowait = types.MethodType(cutin_nowait, mschan)
     return mschan
+
+
+@asynccontextmanager
+async def open_nursery_with_capacity(conc):
+    """A patched Trio.Nursery with child task capacity
+    limit. Its ``start_once_acquired`` blocks when the
+    number of running child tasks started by  it exceeds
+    ``conc``.
+    """
+    sema = trio.Semaphore(conc)
+    async def _rl_task(fn, *args, task_status=trio.TASK_STATUS_IGNORED):
+        async with sema:
+            task_status.started()
+            await fn(*args)
+    async def start_once_acquired(self, fn, *args):
+        await self.start(_rl_task, fn, *args)
+
+    async with trio.open_nursery() as _n:
+        _n.start_once_acquired = types.MethodType(start_once_acquired, _n)
+        yield _n
 
 
 class nullacontext(object):

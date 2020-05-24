@@ -65,7 +65,8 @@ def roll(l, now=None):
 RES_TYPES = ("Cores", "Memory")
 def ls_worker_res(workers):
     fs = ""
-    FMT = "{:>25}" + "{:>10}"*len(RES_TYPES) + "\n"
+    len_name = max(len(w.name) for w in workers) + 4
+    FMT = "{:>"+str(len_name)+"}" + "{:>10}"*len(RES_TYPES) + "\n"
     def row(*cel):
         nonlocal fs
         fs += FMT.format(*cel)

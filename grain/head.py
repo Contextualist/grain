@@ -112,10 +112,10 @@ class _cobj:
         if GVAR.instance == "local":
             return getattr(self._h, attr)
         return getattr(self._dh, attr)
-class GrainPseudoRemote(object):
+class GrainPseudoRemote:
     def __init__(self, res, out=""):
         self.res = res
-        self.name = "local"
+        self.name = f"{trio.socket.gethostname()}(local)"
         self.health = FULL_HEALTH
         self.wg = WaitGroup()
         self.cg = set()
@@ -151,7 +151,7 @@ class GrainPseudoRemote(object):
         print(f"worker {self.name} clear")
 
 
-class GrainManager(object):
+class GrainManager:
     """Manage workers and resources.
     """
     def __init__(self, pool_init, _n, temperr, persistent, listen_addr):
@@ -176,7 +176,7 @@ class GrainManager(object):
             if w.health <= 0 and w in self.pool:
                 if type(err) not in self.temperr:
                     print(tb)
-                if w.name == 'local': raise RuntimeError("local worker quits")
+                if w.name.endswith('(local)'): raise RuntimeError("local worker quits")
                 print(f"quit worker {w.name} due to poor health {w.health}")
                 await self.unregister(w.name, locked=True)
 

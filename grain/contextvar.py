@@ -5,10 +5,9 @@ _GVAR = dict(
     instance = ContextVar("GRAIN_INSTANCE"),
 )
 
-class _None(object):
-    pass
+_None = object()
 
-class GrainVar(object):
+class GrainVar:
 
     def __getattr__(self, k):
         return _GVAR.get(k).get()
