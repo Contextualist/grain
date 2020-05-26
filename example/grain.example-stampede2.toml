@@ -1,0 +1,39 @@
+system = "slurm"
+
+[head]
+listen = "bridge://x@x.x.x.x:x?iface=em3" # login-node(em3) <-> comp-node(em1)/login-node(em3)
+cmd = '''
+python YOUR_ENTRYPOINT.py
+'''
+
+[worker]
+log_file = "./w{{HHMMSS}}-sp2.log"
+dial = "bridge://x@x.x.x.x:x" # comp-node(em1) <-> login-node(em3)/comp-node(em1)
+cli_dial = "bridge://x@104.154.223.146:9555?iface=em3" # login-node(em3) <-> comp-node(em3)
+
+[script]
+queue = "skx-dev"
+#queue = "skx-normal"
+walltime = "00:30:00"
+PPN = 48
+MPN = 150
+
+setup_cleanup = '''
+# load modules, source profiles, make cache dir, etc.
+'''
+
+# We need a custom template as sp2 rejects submission with `--mem` set
+[custom_system]
+submit_cmd = "sbatch"
+directory = "#SBATCH"
+template = """{script.shebang}
+#SBATCH -J {name}
+#SBATCH -p {script.queue}
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node={script.PPN}
+#SBATCH --time={script.walltime}
+#SBATCH -o {log_file}
+{script.extra_args_str}
+
+{{MAIN}}
+"""

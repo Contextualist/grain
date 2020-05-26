@@ -1,0 +1,32 @@
+system = "slurm"
+
+[head]
+listen = "tcp://:4242"
+#listen = "bridge://x@x.x.x.x:x" # login-node <-> comp-node
+#listen = "bridge://x@x.x.x.x?iface=ipogif0" # comp-node <-> comp-node
+cmd = '''
+python YOUR_ENTRYPOINT.py
+'''
+
+[head.script]
+queue = "general"
+walltime = "168:00:00"
+
+[worker]
+log_file = "./w{{HHMMSS}}-br.log"
+dial = "tcp://elogin1.bigred3.uits.iu.edu:4242" # elogin1 or elogin2
+#dial = "bridge://x@x.x.x.x:x" # comp-node <-> login-node
+#dial = "bridge://x@x.x.x.x:x?iface=ipogif0" # comp-node <-> comp-node
+#cli_dial = "bridge://x@x.x.x.x:x" # In case when head is on a comp-node
+
+[script]
+queue = "debug"
+#queue = "general"
+walltime = "4:00:00"
+PPN = 48
+MPN = 58
+extra_args = ["--export=PATH"]
+
+setup_cleanup = '''
+# load modules, source profiles, make cache dir, etc.
+'''

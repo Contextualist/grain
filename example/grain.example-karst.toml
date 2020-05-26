@@ -1,0 +1,27 @@
+system = "pbs_wrap"
+
+[head]
+listen = "tcp://:4242"
+#listen = "bridge://x@x.x.x.x:x"
+cmd = '''
+python YOUR_ENTRYPOINT.py
+'''
+
+[head.script]
+queue = "''"
+walltime = "168:00:00"
+
+[worker]
+log_file = "./w{{HHMMSS}}-ks.log"
+dial = "tcp://h1.karst.uits.iu.edu:4242" # h1 or h2
+#dial = "bridge://x@x.x.x.x:x"
+
+[script]
+queue = "debug" # for normal queue, simply comment this out or use `queue = "''"`
+walltime = "1:00:00"
+PPN = 16
+MPN = 31
+
+setup_cleanup = '''
+# load modules, source profiles, make cache dir, etc.
+'''
