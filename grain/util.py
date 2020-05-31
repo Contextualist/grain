@@ -37,7 +37,7 @@ def aretry(attempts=3, dropafter=180, errtype=Exception, silent=False, kwargs1=N
 
 
 import trio
-from trio.hazmat import ParkingLot, checkpoint, enable_ki_protection
+from trio.lowlevel import ParkingLot, checkpoint, enable_ki_protection
 from outcome import Value
 from async_generator import asynccontextmanager
 
@@ -77,7 +77,7 @@ def cutin_nowait(self, value):
         assert not self._state.data
         task, _ = self._state.receive_tasks.popitem(last=False)
         task.custom_sleep_data._tasks.remove(task)
-        trio.hazmat.reschedule(task, Value(value))
+        trio.lowlevel.reschedule(task, Value(value))
     elif len(self._state.data) < self._state.max_buffer_size:
         self._state.data.appendleft(value)
     else:

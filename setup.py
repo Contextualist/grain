@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="grain",
-    version="0.12.1",
+    version="0.12.2",
     author="Harry Zhang",
     author_email="zhanghar@iu.edu",
     description="A scheduler for resource-aware parallel computing on clusters.",
@@ -15,9 +15,9 @@ setuptools.setup(
     packages=setuptools.find_packages(),
     python_requires=">=3.6",
     install_requires=[
-        "trio",
+        "trio >= 0.15.0",
         "dill",
-        "toml @ git+https://github.com/uiri/toml.git@f4f0b84#egg=toml-f4f0b84",
+        "toml >= 0.10.1",
         "click",
         "psutil",
     ],

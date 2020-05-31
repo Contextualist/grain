@@ -75,8 +75,8 @@ class _Process(object):
     async def loop(self, task_status=trio.TASK_STATUS_IGNORED):
         child_r, parent_w = os.pipe()
         parent_r, child_w = os.pipe()
-        async with trio.hazmat.FdStream(parent_w) as self.to_child, \
-                   trio.hazmat.FdStream(parent_r) as self.from_child:
+        async with trio.lowlevel.FdStream(parent_w) as self.to_child, \
+                   trio.lowlevel.FdStream(parent_r) as self.from_child:
             task_status.started()
             with self.idle_timeout:
                 await trio.run_process([sys.executable, "-m", "grain.subproc_worker", "--fd-read", str(child_r), "--fd-write", str(child_w)],
