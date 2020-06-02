@@ -14,8 +14,8 @@ dial = "tcp://elogin1.bigred3.uits.iu.edu:4242"
 
 [script]
 queue = "general"
-PPN = 48
-MPN = 60
+cores = 48
+memory = 58
 
 setup_cleanup = '''
 # load modules, source profiles, make cache dir, etc.

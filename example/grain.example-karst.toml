@@ -19,8 +19,8 @@ dial = "tcp://h1.karst.uits.iu.edu:4242" # h1 or h2
 [script]
 queue = "debug" # for normal queue, simply comment this out or use `queue = "''"`
 walltime = "1:00:00"
-PPN = 16
-MPN = 31
+cores = 16
+memory = 31
 
 setup_cleanup = '''
 # load modules, source profiles, make cache dir, etc.

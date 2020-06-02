@@ -1,5 +1,6 @@
 import click
 import trio
+import toml
 
 from .pair import SocketChannel, notify
 from .config import load_conf, setdefault
@@ -12,6 +13,7 @@ import functools
 from contextlib import contextmanager
 import sys
 import os
+import json
 
 VAR = { # replace any occurance of `{{key}}` with `value()`. Evaluate at each submission
     "HHMMSS": (lambda: datetime.now().strftime('%H%M%S')),
@@ -22,8 +24,7 @@ WORKER_MAIN = """echo "worker {name}'s node is $(hostname)"
 {script.setup}
 
 date
-RES='Node(N={script.PPN},M={script.rMPN})&WTime("{script.rwalltime}",countdown=True)'
-python -m grain.worker --url {worker.dial} --res "$RES"
+python -m grain.worker --url {worker.dial} --res {script.res_str}
 date
 
 {script.cleanup}
@@ -41,8 +42,8 @@ SLURM_TEMP = """{script.shebang}
 #SBATCH -J {name}
 #SBATCH -p {script.queue}
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node={script.PPN}
-#SBATCH --mem={script.MPN}G
+#SBATCH --ntasks-per-node={script.cores}
+#SBATCH --mem={script.memory}G
 #SBATCH --time={script.walltime}
 #SBATCH -o {log_file}
 {script.extra_args_str}
@@ -54,8 +55,8 @@ SLURM_TEMP = """{script.shebang}
 PBS_TEMP = """{script.shebang}
 #PBS -N {name}
 #PBS -q {script.queue}
-#PBS -l nodes=1:ppn={script.PPN},walltime={script.walltime}
-#PBS -l vmem={script.MPN}gb
+#PBS -l nodes=1:ppn={script.cores},walltime={script.walltime}
+#PBS -l vmem={script.memory}gb
 #PBS -j oe
 #PBS -o {log_file}
 {script.extra_args_str}
@@ -68,8 +69,8 @@ cd $PBS_O_WORKDIR
 PBSW_TEMP = """{script.shebang}
 #PBS -N {name}
 #PBS -q {script.queue}
-#PBS -l nodes=1:ppn={script.PPN},walltime={script.walltime}
-#PBS -l vmem={script.MPN}gb
+#PBS -l nodes=1:ppn={script.cores},walltime={script.walltime}
+#PBS -l vmem={script.memory}gb
 #PBS -j oe
 #PBS -o {log_file}
 {script.extra_args_str}
@@ -134,10 +135,23 @@ def global_options(fn):
         return fn(conf=load_conf(config), *args, **kwargs)
     return _wrapped
 
+def _toml_inline(**d):
+    class InlineDict(dict, toml.decoder.InlineTableDict):
+        pass
+    for k,v in d.items():
+        d[k] = InlineDict(v)
+    return toml.dumps(d, encoder=toml.TomlPreserveInlineDictEncoder())
 def gen_script(conf):
     scriptc = conf.script
-    scriptc.rMPN = int(scriptc.MPN/15*14)
-    scriptc.walltime, scriptc.rwalltime = norm_wtime(scriptc.walltime)
+    if hasattr(scriptc, "PPN"):
+        scriptc.cores, scriptc.memory = scriptc.PPN, scriptc.MPN
+    rmem = int(scriptc.memory/15*14)
+    scriptc.walltime, rwalltime = norm_wtime(scriptc.walltime)
+    # json.dumps is for linebreak and quote escape
+    scriptc.res_str = json.dumps(_toml_inline(
+        Node=dict(N=scriptc.cores, M=rmem),
+        WTime=dict(T=rwalltime, countdown=True),
+    ))
     scriptc.setup, scriptc.cleanup = eval_defer(scriptc.setup_cleanup)
     if conf.custom_system:
         scmd, dirc, temp = conf.custom_system.submit_cmd, conf.custom_system.directory, conf.custom_system.template

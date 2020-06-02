@@ -69,8 +69,8 @@ cli_dial = "tcp://elogin1.bigred3.uits.iu.edu:4242" # optional, default to `work
 shebang = "#!/bin/bash" # optional
 queue = "general"
 walltime = "12:00:00" # optional
-PPN = 48
-MPN = 60
+cores = 48
+memory = 60
 extra_args = [] # optional
 
 # `defer` is a magic statement that makes the cmd

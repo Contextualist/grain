@@ -23,8 +23,8 @@ dial = "tcp://elogin1.bigred3.uits.iu.edu:4242" # elogin1 or elogin2
 queue = "debug"
 #queue = "general"
 walltime = "4:00:00"
-PPN = 48
-MPN = 58
+cores = 48
+memory = 58
 extra_args = ["--export=PATH"]
 
 setup_cleanup = '''

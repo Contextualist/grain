@@ -15,8 +15,8 @@ cli_dial = "bridge://x@104.154.223.146:9555?iface=em3" # login-node(em3) <-> com
 queue = "skx-dev"
 #queue = "skx-normal"
 walltime = "00:30:00"
-PPN = 48
-MPN = 150
+cores = 48
+memory = 150
 
 setup_cleanup = '''
 # load modules, source profiles, make cache dir, etc.

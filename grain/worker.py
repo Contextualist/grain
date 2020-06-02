@@ -1,13 +1,15 @@
 import trio
 import dill as pickle
+import toml
 
 from functools import partial
 import traceback
 import argparse
 import time
+from io import StringIO
 
 from .contextvar import GVAR
-from .resource import *
+from . import resource
 from .pair import notify, SocketChannel
 from .subproc import subprocess_pool_daemon
 
@@ -77,10 +79,17 @@ async def grain_worker(RES, url):
             _n.cancel_scope.cancel()
 
 async def __loop():
-    RES = eval(carg.res) # FIXME: better way to define res
+    RES = parse_res(carg.res)
     url = carg.url
     while url != NO_NEXT_URL:
         url = await grain_worker(RES, url)
+
+def parse_res(res_str):
+    res_dict = toml.load(StringIO(res_str.replace('\\n', '\n')))
+    RES = resource.ZERO
+    for rn, rargs in res_dict.items():
+        RES &= getattr(resource, rn)(**rargs)
+    return RES
 
 class nullcontext(object):
     def __enter__(self): return self
@@ -95,7 +104,8 @@ class WorkerCancelled(BaseException):
 if __name__ == "__main__":
     argp = argparse.ArgumentParser(description="Worker instance for Grain")
     argp.add_argument('--url', default="", help="URL to connect to Grain's head instance")
-    argp.add_argument('--res', '-r', default="None", help="the resource owned by the worker (e.g. Node(N=16,M=28)&WTime(1800)")
+    argp.add_argument('--res', '-r', default="None", help=r'the resource owned by the worker, in TOML '
+                                                          r'(e.g. "Node = { N=16, M=32 }\nWTime = { T=\"1:00:00\", countdown=true }")')
     carg = argp.parse_args()
 
     GVAR.instance = trio.socket.gethostname()
