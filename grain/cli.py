@@ -214,13 +214,14 @@ def ls(conf):
                 print((await c.receive()).decode())
     trio.run(_ls, getattr(conf.worker, "cli_dial", conf.worker.dial))
 
-@main.command(help="Unregister a worker")
+@main.command(help="Quit a worker")
 @global_options
+@click.option('-f', '--force', is_flag=True, help="Kill the worker even if it still have running jobs")
 @click.argument('worker_name')
-def unreg(conf, worker_name):
+def quit(conf, force, worker_name):
     async def _unreg(head, name):
         with _handle_connection_error(head):
-            await notify(f"{head}", b"UNR"+name.encode(), seg=True)
+            await notify(f"{head}", (b"UNR" if force else b"TRM")+name.encode(), seg=True)
     trio.run(_unreg, getattr(conf.worker, "cli_dial", conf.worker.dial), worker_name)
 
 @contextmanager

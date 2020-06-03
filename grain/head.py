@@ -10,7 +10,7 @@ import sys
 
 from .contextvar import GVAR
 from .util import timeblock, WaitGroup, nullacontext, optional_cm, make_prependable
-from .resource import ZERO
+from .resource import ZERO, Reject
 from .pair import SocketChannel, SocketChannelAcceptor
 from .subproc import subprocess_pool_daemon, BrokenSubprocessError
 from .stat import log_event, log_timestart, log_timeend, stat_logger, ls_worker_res, reg_probe, collect_probe
@@ -194,12 +194,21 @@ class GrainManager:
     async def unregister(self, name, locked=False):
         async with nullacontext() if locked else self.cond_res:
             # expect one and only name
-            i,w = next(((i,x) for i,x in enumerate(self.pool) if x.name==name), (0,0))
+            i,w = next(((i,x) for i,x in enumerate(self.pool) if x.name==name), (0,None))
             if not i: return
             self.pool.pop(i)
             await w.aclose() # notify exit and reschedule pending jobs
             if not self.persistent:
                 raise RuntimeError(f"worker {name} exits, abort.")
+    async def terminate(self, name):
+        async with self.cond_res:
+            # expect one and only name
+            w = next((x for x in self.pool if x.name==name), None)
+            if not w or type(w.res) is Reject: return
+            w.res = Reject(w.res)
+        await w.wg.wait() # wait till no job is running
+        await self.unregister(name)
+
     async def worker_manager(self, task_status=trio.TASK_STATUS_IGNORED):
         async with trio.open_nursery() as _n, \
                    SocketChannelAcceptor(self.listen_addr, _n=_n) as self.soacceptor:
@@ -230,6 +239,10 @@ class GrainManager:
                         sta = ls_worker_res(self.pool) + '\n' + \
                               collect_probe()
                         await _c.try_send(sta.encode())
+                    elif cmd == b"TRM": # graceful termination
+                        addr = msg.decode()
+                        print(f"worker {addr} is going to leave")
+                        _n.start_soon(self.terminate, addr)
                     else:
                         print(f"worker manager received unknown command {cmd} from {_c.host}")
 
