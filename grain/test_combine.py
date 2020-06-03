@@ -6,7 +6,7 @@ import trio
 
 from functools import partial
 
-run_combine = partial(run_combine, config_file="grain.pytest.toml")
+run = partial(run, config_file="grain.pytest.toml")
 
 async def _anop():
     await trio.sleep(0)
@@ -22,7 +22,7 @@ async def _main_subtask(i):
 
 def test_main_subtask_exception():
     with pytest.raises(Critical):
-        run_combine([partial(_main_subtask, i) for i in range(10)], [], ZERO)
+        run([partial(_main_subtask, i) for i in range(10)], [], ZERO)
 
 async def _top_serial():
     for _ in range(3):
@@ -31,4 +31,4 @@ async def _top_serial():
         assert wg.results == [None]
 
 def test_top_serial():
-    run_combine(_top_serial, [], ZERO)
+    run(_top_serial, [], ZERO)

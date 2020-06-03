@@ -11,12 +11,12 @@ import trio
 
 def open_waitgroup():
     if not CombineGroup:
-        raise RuntimeError("`open_waitgroup` is only valid inside `run_combine`")
+        raise RuntimeError("`open_waitgroup` is only valid inside `grain.combine.run`")
     return CombineGroup()
 
 async def exec1(res, fn, *args, **kwargs):
     if not Exec1:
-        raise RuntimeError("`exec1` is only valid inside `run_combine`")
+        raise RuntimeError("`exec1` is only valid inside `grain.combine.run`")
     return await Exec1(res, fn, *args, **kwargs)
 
 async def load_cache_or_exec1(res, fn, *args, **kwargs):
@@ -156,5 +156,5 @@ async def boot_combine(subtasks, args, kwargs):
                 else:
                     await subtasks()
 
-def run_combine(subtasks, *args, **kwargs):
+def run(subtasks, *args, **kwargs):
     trio.run(boot_combine, subtasks, args, kwargs)
