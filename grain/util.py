@@ -2,6 +2,7 @@ from contextlib import ContextDecorator
 from timeit import default_timer as timer
 from functools import wraps
 import types
+from math import inf as INF
 
 def timeblock(text="this block", enter=False):
     class TimeblockCtx(ContextDecorator):
@@ -92,7 +93,7 @@ def make_prependable(mschan):
 async def open_nursery_with_capacity(conc):
     """A patched Trio.Nursery with child task capacity
     limit. Its ``start_once_acquired`` blocks when the
-    number of running child tasks started by  it exceeds
+    number of running child tasks started by it exceeds
     ``conc``.
     """
     sema = trio.Semaphore(conc)
@@ -106,6 +107,65 @@ async def open_nursery_with_capacity(conc):
     async with trio.open_nursery() as _n:
         _n.start_once_acquired = types.MethodType(start_once_acquired, _n)
         yield _n
+
+@asynccontextmanager
+async def open_ordered_nursery():
+    """A patched Trio.Nursery that is able to start
+    child task in strict first-come-first-served order,
+    using its `start_now` method.
+    """
+    sq, rq = trio.open_memory_channel(INF)
+    async def _starter():
+        async for fargs in rq:
+            _n.start_soon(*fargs)
+    def start_now(self, *fargs):
+        sq.send_nowait(fargs)
+
+    async with trio.open_nursery() as _n:
+        _n.start_soon(_starter)
+        async with trio.open_nursery() as _on:
+            _on.start_now = types.MethodType(start_now, _on)
+            yield _on
+        await sq.aclose()
+
+@asynccontextmanager
+async def QueueLimiter(conc):
+    """Rate limit for the submission of delayed functions. Grain by
+    default enqueues delayed functions eagerly (i.e. as soon as it
+    is called). Sometimes if we have a lot of functions that can be
+    run in parallel, we don't want to overwhelm the queue, so we could
+    set a rate limit check prior submission. Note that the context
+    scope blocks until all functions submitted through it are done.
+
+    Args:
+      conc (int): maximum number of concurrently running functions
+
+    e.g.::
+
+        @delayed
+        async def dfn(x):
+            await trio.sleep(1)
+            return x+1
+        r_ = 0
+        async with QueueLimiter(10) as ql:
+            for i in range(30):
+                r_ += await ql(dfn)(i)
+                #     ^^^^^wait for submission, not for result
+        r = await r_
+    """
+    sema = trio.Semaphore(conc)
+    async def sema2notify(dfn, args, kwargs, task_status):
+        async with sema:
+            do = dfn(*args, **kwargs)
+            task_status.started(do)
+            await do # sema is not released until calculation is done
+    def _rl_wrapper(dfn):
+        async def _rl_dfn(*args, **kwargs):
+            do = await _n.start(sema2notify, dfn, args, kwargs)
+            return do
+        return _rl_dfn
+    async with trio.open_nursery() as _n:
+        yield _rl_wrapper
 
 
 class nullacontext(object):

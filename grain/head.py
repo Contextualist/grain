@@ -296,10 +296,14 @@ class GrainExecutor(object):
 
     async def asubmit(self, res, fn, *args, **kwargs):
         self._wg.add()
-        await self.push_job.send((0, res, partial(fn, *args, **kwargs)))
+        tid = self.jobn = self.jobn+1
+        await self.push_job.send((tid, res, partial(fn, *args, **kwargs)))
+        return tid
     def submit(self, res, fn, *args, **kwargs):
         self._wg.add()
-        self.push_job.send_nowait((0, res, partial(fn, *args, **kwargs)))
+        tid = self.jobn = self.jobn+1
+        self.push_job.send_nowait((tid, res, partial(fn, *args, **kwargs)))
+        return tid
     def resubmit(self, tid, res, fn):
         self._wg.add()
         self.push_job.cutin_nowait((tid, res, fn)) # prepend the queue
@@ -339,7 +343,6 @@ class GrainExecutor(object):
                        trio.open_nursery() as _n, \
                        self.pull_job:
                 async for tid, res, fn in self.pull_job:
-                    if not tid: tid = self.jobn = self.jobn+1
                     res, w = await self.mgr.schedule(res)
                     _n.start_soon(self.__task_with_res, tid, res, w, fn)
 
