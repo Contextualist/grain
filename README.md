@@ -1,43 +1,43 @@
 # Grain
 
-A scheduler built with `trio` for resource-aware parallel computing on clusters.
+[![Docs](https://img.shields.io/badge/docs-read%20now-blue.svg)](https://grain.readthedocs.io)
+[![PyPI version](https://img.shields.io/pypi/v/grain-scheduler.svg)](https://pypi.org/project/grain-scheduler)
+
+A scheduler for resource-aware parallel external computing on clusters.
+
+### Install
+
+```Bash
+pip install grain-scheduler
+```
 
 ### TL;DR
 
-Three core functions for you to run async jobs in an arbitary mix of parallel and sequential manner.
+[Dask-like](https://docs.dask.org/en/latest/delayed.html) async-native delayed objects for you to run jobs in an arbitary mix of parallel and sequential manner.
 
 ```python
-# Jobs/subtasks inside a waitgroup run parallelly
-async with grain.open_waitgroup() as wg:
-
-    # Put a job onto the waitgroup to be executed
-    wg.submit(resource, fn, *args, **kwargs)
-
-    # Put a subtask onto the waitgroup. Submit jobs / 
-    # start other subtasks inside the subtask.
-    wg.start_subtask(vfn, *args, **kwargs)
-
-# Waitgroup blocks here until all of its jobs are done,
-# so outside a waitgroup is essentially sequencial.
-
-results = wg.results # sorted in the order of submission
+# "I want to run fn in parallel (local or remote), and let it return a placeholder for the result."
+@delayed
+async def fn(x):
+    ...
 
 
-# Execute one job sequentially
-result = await grain.exec1(resource, fn, *args, **kwargs)
+# "I want to run it **locally** because it is a cheap function that launch other expensive calculations."
+r_ = fn(a)
+
+# Or "I want to run it **remotely** (on a worker) with resource 4 CPU cores because it is an expensive, leaf function."
+r_ = (fn @ Cores(4))(a)
+
+
+# "I want the result, now!"
+r = await r_ # ... and sure you can write them in one step: r = await (fn @ Cores(4))(a)
+
+# Or "I need to do several things in parallel, and get the summed result afterwards."
+r_ = (fn @ Cores(2))(a) + (fn @ Cores(6))(b)
+r = await r_
 ```
 
-Entrypoint:
-
-```python
-async def main(): # top-level subtask
-    # Submit jobs / start subtasks here
-grain.run_combine(main, [worker1_addr, worker2_addr, ...], resource_per_worker)
-# ... Or for top-level parallelism, ...
-#grain.run_combine([main1, main2, ...], ...)
-```
-
-Check out [example](example) for complete demos / more patterns and configuration sample.
+Check out [tutorial](https://grain.readthedocs.io/en/latest/tutorial_delayed.html) for complete demos and how to set up workers.
 
 ### Resource-awareness
 
@@ -50,11 +50,3 @@ Every time a job function runs, it has access to `grain.GVAR.res`, a [context-lo
 The top-level APIs (i.e. "combine") are built upon an [executor](https://docs.python.org/3/library/concurrent.futures.html#concurrent.futures.Executor)-like backend called `grain.GrainExecutor`. It schedules and dispatches jobs to workers, and it maintains a single job queue and a result queue. The executor usually runs on the head node in a cluster.
 
 Workers, one per node, simply receive async functions (i.e. jobs) from the executor and run them. Executor and workers use socket for communication, and [`dill`](https://dill.readthedocs.io/en/latest/) serializes the functions to byte payloads.
-
-### Acknowledgement
-
-The API of Grain is largely insipred by [structured concurrency](https://vorpus.org/blog/notes-on-structured-concurrency-or-go-statement-considered-harmful), a major design principle behind [Trio](https://trio.readthedocs.io), and it is specifically inspired by the API of Trio. And of course, Grain uses Trio internally.
-
-### Caveat
-
-Relative import (import not on Python package path) should be within the job function. Global reference fails in this case.

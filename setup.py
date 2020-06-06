@@ -4,8 +4,8 @@ with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setuptools.setup(
-    name="grain",
-    version="0.12.2",
+    name="grain-scheduler",
+    version="0.13.0",
     author="Harry Zhang",
     author_email="zhanghar@iu.edu",
     description="A scheduler for resource-aware parallel computing on clusters.",

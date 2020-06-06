@@ -66,7 +66,7 @@ cli_dial = "tcp://elogin1.bigred3.uits.iu.edu:4242" # optional, default to `work
 # overridden by `[head.script]` or `[worker.script]`.
 [script]
 
-shebang = "#!/bin/bash" # optional
+shebang = "#!/bin/bash" # optional, CAVEAT: currently system `pbs_wrap` only support bash/zsh
 queue = "general"
 walltime = "12:00:00" # optional
 cores = 48
