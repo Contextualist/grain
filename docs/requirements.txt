@@ -1,0 +1,9 @@
+sphinx
+sphinx_rtd_theme
+sphinxcontrib-trio
+
+trio >= 0.15.0
+dill
+toml >= 0.10.1
+click
+psutil

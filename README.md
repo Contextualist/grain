@@ -47,6 +47,6 @@ Every time a job function runs, it has access to `grain.GVAR.res`, a [context-lo
 
 ### Executor, Workers and communication
 
-The top-level APIs (i.e. "combine") are built upon an [executor](https://docs.python.org/3/library/concurrent.futures.html#concurrent.futures.Executor)-like backend called `grain.GrainExecutor`. It schedules and dispatches jobs to workers, and it maintains a single job queue and a result queue. The executor usually runs on the head node in a cluster.
+The top-level APIs (i.e. "delayed" and "combine") are built upon an [executor](https://docs.python.org/3/library/concurrent.futures.html#concurrent.futures.Executor)-like backend called `grain.GrainExecutor`. It schedules and dispatches jobs to workers, and it maintains a single job queue and a result queue. The executor usually runs on the head node in a cluster.
 
 Workers, one per node, simply receive async functions (i.e. jobs) from the executor and run them. Executor and workers use socket for communication, and [`dill`](https://dill.readthedocs.io/en/latest/) serializes the functions to byte payloads.
