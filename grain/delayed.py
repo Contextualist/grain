@@ -23,7 +23,7 @@ async def each(*dos):
       list of corresponding results
     """
     if len(dos) == 1 and isinstance(dos[0], Iterable):
-        dos = dos[0]
+        dos = list(dos[0])
     return [await do for do in dos]
 
 
