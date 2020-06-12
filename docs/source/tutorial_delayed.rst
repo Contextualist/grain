@@ -40,7 +40,7 @@ parallelizable, so we make them **delayed functions** (or we can call it a
         # import inside the function because a tasklet should not have global reference
         import trio
         print(f"start adding to {x} with resource {GVAR.res}")
-        await trio.sleep(x/10) # stimulate lenthy calculation
+        await trio.sleep(x/10) # simulate lenthy calculation
         print(f"done adding to {x}")
         return x + 1
 
@@ -154,7 +154,7 @@ Local or remote execution
 So far you have seen two ways submitting functions for paralle execution: without or with
 resource constraint. These two ways actually map to the two kinds of functions when we are
 orgranizing our workflow. Function callstack in a workflow usually resembles a tree. The
-"leaf functions" perform expensive calculations; the "branch functions" calls other branches
+"leaf functions" perform expensive calculations; the "branch functions" call other branches
 and/or leaves and reduce their results to final answers. The "branch functions" are usually
 cheap compared to the "leaf functions", so we request resources for the "leaf functions."
 Delayed functions requesting no resource ("branches") will be executed locally. Therefore
@@ -219,6 +219,11 @@ it. A solution is presented below::
 
 The order of execution for the three ``elevated_sum`` might be different each time.
 
+.. note:: The following line will **not** parallelize the execution of ``elevated_sum``,
+   because each submitted tasklet is waited for completion before moving on::
+
+       [await elevated_sum(d) for d in data]
+
 So far, we can have a rule of thumb for using Grain:
 
 - Parallel execution: wrap the function with ``@delayed``.
@@ -232,7 +237,7 @@ Workers, residing on computaional node of a cluster, communicate with Grain's
 head/scheduler to make parallel computaion across clusters possible. Unlike Dask,
 we have one worker per machine / computation node. The worker have access to all
 resources on the machine. When a worker connects to Grain's head, it will inform head
-the resources they own. Grain's head dispatch jobs to it as long as it has enough
+the resources they own. Grain's head dispatches jobs to it as long as it has enough
 resources for the jobs. The jobs are async functions (e.g. of external processes), so
 a worker can monitor the status of multiple execution concurrently.
 

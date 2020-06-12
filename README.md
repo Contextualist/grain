@@ -23,7 +23,7 @@ async def fn(x):
 
 
 # "I want to run it **locally** because it is a cheap function that launch other expensive calculations."
-r_ = fn(a)
+r_ = fn(a) # Note that `r_` is not the return value; it's a placeholder of the return value
 
 # Or "I want to run it **remotely** (on a worker) with resource 4 CPU cores because it is an expensive, leaf function."
 r_ = (fn @ Cores(4))(a)
@@ -43,10 +43,10 @@ Check out [tutorial](https://grain.readthedocs.io/en/latest/tutorial_delayed.htm
 
 Every job in the job queue has a resource request infomation along with the job to run. Before the executor run each job, it queries each worker for resource availability. If resource is insufficient, the job queue is suspended until completed jobs return resources. Resources can be CPU cores, virtual memory, both, (or anything user defined following interface `grain.resource.Resource`).
 
-Every time a job function runs, it has access to `grain.GVAR.res`, a [context-local variable](https://trio.readthedocs.io/en/stable/reference-core.html#task-local-storage) giving the information of specific resource dedicated to the job. (e.g. if a job is submitted with `CPU(3)`, asking for 3 cores, it might receive allocation like `CPU([6,7,9])`.)
+Every time a job function runs, it has access to `grain.GVAR.res`, a [context-local variable](https://trio.readthedocs.io/en/stable/reference-core.html#task-local-storage) giving the information of specific resource dedicated to the job. (e.g. if a job is submitted with `Cores(3)`, asking for 3 CPU cores, it might receive allocation like `Cores([6,7,9])`.)
 
 ### Executor, Workers and communication
 
-The top-level APIs (i.e. "delayed" and "combine") are built upon an [executor](https://docs.python.org/3/library/concurrent.futures.html#concurrent.futures.Executor)-like backend called `grain.GrainExecutor`. It schedules and dispatches jobs to workers, and it maintains a single job queue and a result queue. The executor usually runs on the head node in a cluster.
+The top-level APIs (i.e. "delayed" and "combine") are built upon an [executor](https://docs.python.org/3/library/concurrent.futures.html#concurrent.futures.Executor)-like backend called `grain.GrainExecutor`. It schedules and dispatches jobs to workers, and it maintains a single job queue and a result queue.
 
 Workers, one per node, simply receive async functions (i.e. jobs) from the executor and run them. Executor and workers use socket for communication, and [`dill`](https://dill.readthedocs.io/en/latest/) serializes the functions to byte payloads.

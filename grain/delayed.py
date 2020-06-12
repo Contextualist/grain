@@ -12,12 +12,12 @@ from collections.abc import Iterable
 
 
 async def each(*dos):
-    """A convinient helper function to await on a list
-    of delayed objects.
+    """A convinient helper function to await on a list of delayed
+    objects.
 
     Args:
-      \*dos (\*Delayed or [Iterable[Delayed]]): list of
-        delayed objects
+      \*dos (\*Delayed or [Iterable[Delayed],]): list of delayed
+        objects
 
     Returns:
       list of corresponding results
@@ -28,8 +28,29 @@ async def each(*dos):
 
 
 def delayed(fn=None, nout=None, copy_on_setitem=True):
-    """Decorator to wraps an async function into a delayed
-    function.
+    """Wraps an async function into a delayed function (:class:`DelayedFn`).
+    It can be used as a decorator, or around the function directly (i.e.
+    ``fn = delayed(fn)``).
+
+    Args:
+      nout (int): If set, the return value of the function is assumed
+        to be a iterable with length ``nout``, so that indexing and
+        unpacking on the delayed object is allowed.
+      copy_on_setitem (bool): The default (True) is a safe option to
+        make sure previously unpacked values from a delayed objects
+        are not affected by a later setitem op on that object. This
+        is achieved by making a copy of the object at result evaluation,
+        so this can be turned off for performance. Unlike other operations
+        that can return a separate delayed object, ``setitem`` (e.g.
+        ``a[1] = 1``) is an inplace mutating operatation. The following
+        snippet illustrates a situation where a copy is needed::
+
+            r_ = afn() # assume to be a delayed function returns `[3,4]`
+            a_, b_ = r_
+            r_[1] = 9
+            assert (await r_ == [3,9])
+            assert (await a_ == 3) and (await b_ == 4) # copy_on_setitem=True
+            #assert (await a_ == 3) and (await b_ == 9) # copy_on_setitem=False
     """
     if fn is None:
         return partial(delayed, nout=nout, copy_on_setitem=copy_on_setitem)
@@ -38,9 +59,12 @@ def delayed(fn=None, nout=None, copy_on_setitem=True):
     return DelayedFn(fn, nout, copy_on_setitem)
 
 class DelayedFn:
-    """A DelayedFn submit the function and returns a
-    Delayed object when called. Resources could be bound
-    to the function with ``@`` operator.
+    """A DelayedFn submits the function it wraps and returns a
+    :class:`Delayed` object when called. Resources could be bound to
+    the function with ``@`` operator.
+
+    Do not construct this directly, use the :func:`@delayed<delayed>`
+    decorator instead.
     """
     __slots__ = ("fn", "nout", "copy", "res")
     def __init__(self, fn, nout, copy_on_setitem):
@@ -85,25 +109,41 @@ class Future:
 
 
 class Delayed:
-    """Represents a value to be computed by Grain.
-    This is mostly a copy of the implementaton in Dask,
-    but there are several main differences from Dask:
+    """A Delayed object represents a value to be computed by Grain.
 
-        1. Grain's Delayed assumes all ops are cheap
-           and perform them locally.
-        2. As all delayed objects are reduced locally,
-           and Grain worker does not cache results, it is
-           not allowed to pass delayed objects to a delayed
-           function; we want to be explicit on the intention
-           of dependent/serial jobs. e.g.::
+    Do not construct this directly, this is intended to be the return
+    value of a :class:`DelayedFn`.
+
+    A ``Delayed`` supports most python operations, each of which creates
+    another ``Delayed`` representing the result:
+
+        * Most operators (``*``, ``-``, ``+=`` (treated as ``+``), ...)
+        * Item iteration, indexing, and slicing (``a[0]``)
+        * Item mutation __setitem__ (``a[0] = 1``)
+        * Attribute access (``a.size``)
+        * Method calls (``a.index(0)``)
+
+    Operations that aren’t supported include:
+
+        * Attr mutation __setattr__ (``a.foo = 1``)
+        * Use as a predicate (``if a: ...``)
+
+    This is mostly a copy of the implementaton in Dask, but there are
+    several main differences from Dask:
+
+        1. Grain's Delayed assumes all ops are cheap and perform them
+           locally.
+        2. As all delayed objects are reduced locally, and Grain worker
+           does not cache results, it is not allowed to pass delayed
+           objects to a delayed function; we want to be explicit on
+           the intention of dependent/serial jobs. e.g.::
 
                r1 = await dfn1()
                r2 = await dfn2(r1)
 
-        3. Calling a delayed function submit the calculation
-           immediately.
-        4. A Delayed object is mutable, `setitem` and
-           `setattr` are allowed.
+        3. Calling a delayed function submit the calculation immediately.
+        4. A Delayed object is somehow mutable, ``setitem`` is allowed
+           but ``setattr`` is not (implemented).
     """
     __slots__ = ("_future", "_post_ops", "_length", "_copy")
     def __init__(self, future, post_ops=None, length=None, copy_on_setitem=True):
@@ -271,4 +311,31 @@ async def boot(subtasks, args, kwargs):
                 await subtasks()
 
 def run(subtasks, *args, **kwargs):
+    """Delayed's main entry point. Start your "root" async function(s) here.
+    Except for the first arg, all the other args are optional and are passed
+    to :class:`grain.head.GrainExecutor`.
+
+    Args:
+      subtasks: Root async function(s) that spawns all the other calculations.
+        This could be an async function or an iterable of async functions. If
+        an iterable is passed, all functions are run concurrently.
+      waddrs (Iterable[str]): List of passive workers' addresses to connect.
+      rpw (~grain.resource.Resource): Resource per worker for passive workers
+        and local worker.
+      nolocal (bool): Default to False. If true, local worker's resource is set
+        to ZERO; jobs that takes resource will not run locally.
+      temporary_err (Tuple[Exception]): Exceptions that are not critical to
+        shutdown a worker.
+      reschedule (bool): Default to true. If false, abort the scheduler on any
+        exception instead of resubmitting the failed tasklet.
+      persistent (bool): Default to true. If false, abort the scheduler whenever
+        a worker quits prematurely.
+      config_file (str or None): Grain's config file name. If not set or None,
+        Grain will use the name provided by envar ``GRAIN_CONFIG``, and finally
+        fallback to name ``grain.toml``. If set to False, Grain will use the
+        default profile (see ``config.py``).
+      stat_tag (Callable[~grain.resource.Resource, str]): Define how time statistics
+        is categorized by resource. Jobs with resource that maps to the same
+        str are grouped together.
+    """
     trio.run(boot, subtasks, args, kwargs)

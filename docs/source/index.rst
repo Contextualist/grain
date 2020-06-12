@@ -24,7 +24,6 @@ commit messages provide better information for the features and fixes)
 
 Work in progress:
 
-* API Reference: delayed
 * Resource: a language for coordination
 * Bridge protocol: universal connection
 * Utilities
