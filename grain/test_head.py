@@ -9,7 +9,7 @@ from functools import partial
 from io import StringIO
 
 sprint = partial(trio.run, clock=MockClock(rate=1000))
-GrainExecutor = partial(GrainExecutor, config_file="grain.pytest.toml")
+GrainExecutor = partial(GrainExecutor, config_file=False)
 
 async def rev(n, i):
     await trio.sleep(n-i)
@@ -56,11 +56,11 @@ def test_local_redirectouterr(capsys):
     with GrainExecutor() as exer:
         exer.submit(ZERO, say_something)
     captured = capsys.readouterr()
-    assert captured.out.split('\n')[0] == "something"
+    assert "something\n" in captured.out
 
     with GrainExecutor(config_file=StringIO('''[head]
 listen = "tcp://:4243"
 log_file = "/dev/null"''')) as exer:
         exer.submit(ZERO, say_something)
     captured = capsys.readouterr()
-    assert captured.out.split('\n')[0] != "something"
+    assert "something\n" not in captured.out

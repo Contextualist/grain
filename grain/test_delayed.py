@@ -7,7 +7,7 @@ import trio
 
 from functools import partial
 
-run = partial(run, config_file="grain.pytest.toml")
+run = partial(run, config_file=False)
 
 async def test_delayed_obj():
     r_ = Delayed(Future(42))
