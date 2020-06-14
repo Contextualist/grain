@@ -2,6 +2,7 @@
 """
 from .resource import ZERO
 from .contextvar import GVAR
+from .util import Future
 
 import trio
 import operator
@@ -79,33 +80,19 @@ class DelayedFn:
         # global: exer, _gn, rch
         if 'exer' not in globals():
             raise RuntimeError("Calling a delayed function is only valid inside `grain.delayed.run`")
-        sc, rc = trio.open_memory_channel(1)
+        ft = Future()
         if self.res is not ZERO:
             tid = exer.submit(self.res, self.fn, *args, **kwargs)
-            rch[tid] = sc
+            rch[tid] = ft
         else: # Currently non-leaf tasks are not guarded by the exer. We do not retry on exception.
             # We use an ordered nursery for first-come-first-serve guarentee
-            _gn.start_now(partial(_run_and_send_result, sc, self.fn, *args, **kwargs))
+            _gn.start_now(partial(_run_and_set_result, ft, self.fn, *args, **kwargs))
         self.res = ZERO
-        return Delayed(Future(rc), length=self.nout, copy_on_setitem=self.copy)
+        return Delayed(ft, length=self.nout, copy_on_setitem=self.copy)
 
-async def _run_and_send_result(chan, fn, *args, **kwargs):
+async def _run_and_set_result(ft, fn, *args, **kwargs):
     r = await fn(*args, **kwargs)
-    chan.send_nowait(r)
-
-PENDING = object()
-class Future:
-    __slots__ = ("v", "rchan")
-    def __init__(self, rchan_or_v):
-        if isinstance(rchan_or_v, trio.abc.ReceiveChannel):
-            self.v = PENDING
-            self.rchan = rchan_or_v
-        else:
-            self.v = rchan_or_v
-    async def get(self):
-        if self.v is PENDING:
-            self.v = await self.rchan.receive()
-        return self.v
+    ft.set(r)
 
 
 class Delayed:
@@ -145,12 +132,13 @@ class Delayed:
         4. A Delayed object is somehow mutable, ``setitem`` is allowed
            but ``setattr`` is not (implemented).
     """
-    __slots__ = ("_future", "_post_ops", "_length", "_copy")
+    __slots__ = ("_future", "_post_ops", "_length", "_copy", "_eval_started")
     def __init__(self, future, post_ops=None, length=None, copy_on_setitem=True):
         self._future = future
+        self._post_ops = post_ops or []
         self._length = length
         self._copy = copy_on_setitem
-        self._post_ops = post_ops or []
+        self._eval_started = False
     def __getstate__(self):
         return tuple(getattr(self, i) for i in self.__slots__)
     def __setstate__(self, state):
@@ -158,7 +146,11 @@ class Delayed:
             setattr(self, k, v)
 
     async def result(self):
-        r = await self._future.get()
+        if self._eval_started: # the first call does the eval; the rest wait for its result
+            return await self._future.get()
+        self._eval_started = True
+        _base_future, self._future = self._future, Future()
+        r = await _base_future.get()
         for op, other in self._post_ops:
             #print("post_op", op, "on", other)
             for i, o in enumerate(other):
@@ -171,9 +163,8 @@ class Delayed:
                 if self._copy:
                     r = copy(r) # shallow copy is ok because setitem does not change the value itself
                 op(r, *other)
-        if self._post_ops:
-            self._future = Future(r)
-            self._post_ops.clear()
+        self._future.set(r)
+        self._post_ops.clear()
         return r
     def __await__(self):
         """Await on the Delayed object returns its result"""
@@ -283,14 +274,8 @@ for op in (
 async def relay(inq):
     async with inq:
         async for i, rslt in inq:
-            try:
-                rch[i].send_nowait(rslt)
-            except trio.BrokenResourceError:
-                # This usually happens when one of the main subtasks throws an error,
-                # cancelling receive channel's task.
-                # Suppress this so that the real error can surface.
-                break
-            del rch[i] # one job, one chan
+            rch[i].set(rslt)
+            del rch[i] # one job, one future
 async def boot(subtasks, args, kwargs):
     global exer, _gn, rch
     from .head import GrainExecutor

@@ -67,6 +67,26 @@ class WaitGroup(object):
         else:
             await self._lot.park()
 
+PENDING = object()
+
+class Future:
+    __slots__ = ("_v", "_lot")
+    def __init__(self, v=PENDING):
+        self._v = v
+        self._lot = ParkingLot()
+
+    @enable_ki_protection
+    def set(self, v):
+        self._v = v
+        self._lot.unpark_all()
+
+    async def get(self):
+        if self._v is not PENDING:
+            await checkpoint()
+        else:
+            await self._lot.park()
+        return self._v
+
 
 @enable_ki_protection
 def cutin_nowait(self, value):

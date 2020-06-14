@@ -29,6 +29,14 @@ async def test_delayed_obj():
     assert (await r_ == [3,103])
     assert (await a == 3) and (await b == 103)
 
+async def _await(r_):
+    assert await r_ == 43
+async def test_simutaneous_await():
+    r_ = Delayed(Future(42)) + 1
+    async with trio.open_nursery() as _n:
+        for _ in range(3):
+            _n.start_soon(_await, r_)
+
 def test_delayed_errors():
     a = Delayed(Future([1, 2, 3]))
     # immutable
