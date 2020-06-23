@@ -16,26 +16,6 @@ def timeblock(text="this block", enter=False):
             return False
     return TimeblockCtx()
 
-def aretry(attempts=3, dropafter=180, errtype=Exception, silent=False, kwargs1=None):
-    if attempts <= 0:
-        raise ValueError("Bad retry attempts")
-    def __wrapper(fn):
-        @wraps(fn)
-        async def __aretry(*args, **kwargs):
-            st = timer()
-            err = None
-            for _ in range(attempts):
-                try:
-                    return await fn(*args, **kwargs)
-                except errtype as e:
-                    if not silent: print(f"{fn.__name__!r} raises {e.__class__.__name__}: {e}, retry...")
-                    err = e
-                if timer()-st > dropafter: break
-                if kwargs1: kwargs.update(kwargs1)
-            if err: raise RuntimeError("No more retries") from err
-        return __aretry
-    return __wrapper
-
 
 import trio
 from trio.lowlevel import ParkingLot, checkpoint, enable_ki_protection
@@ -115,6 +95,12 @@ async def open_nursery_with_capacity(conc):
     limit. Its ``start_once_acquired`` blocks when the
     number of running child tasks started by it exceeds
     ``conc``.
+
+    e.g.::
+
+        async with open_nursery_with_capacity(10) as nursery:
+            for _ in range(30):
+                await nursery.start_once_acquired(trio.sleep, 1)
     """
     sema = trio.Semaphore(conc)
     async def _rl_task(fn, *args, task_status=trio.TASK_STATUS_IGNORED):
@@ -200,7 +186,7 @@ def optional_cm(cm, cond_arg):
     return nullacontext()
 
 def set_numpy_oneline_repr():
-    """Change the default Numpy array __repr__ to a
+    """Change the default Numpy array ``__repr__`` to a
     compact one. This is useful for keeping the log
     clean when the job functions involve large Numpy
     arrays as args.

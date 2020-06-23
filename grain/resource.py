@@ -8,13 +8,13 @@ class Resource(object):
     def _alloc(self, res):
         """Return allocated resources. Allocated resources
         should also be able to be used as request resources (i.e.
-        `B.request(A.alloc(some_res))`), but vice versa does not
+        ``B.request(A.alloc(some_res))``), but vice versa does not
         necessary need to be true.
         """
     def _dealloc(self, res):
         pass
     def _repr(self):
-        """__repr__, for concatenating with other resources
+        """``__repr__``, for concatenating with other resources
         """
     def _stat(self):
         """Return (p,q) where p and q are `int`, and p/q
