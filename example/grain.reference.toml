@@ -62,6 +62,12 @@ dial = "tcp://elogin1.bigred3.uits.iu.edu:4242"
 cli_dial = "tcp://elogin1.bigred3.uits.iu.edu:4242" # optional, default to `worker.dial`
 
 
+# Specify resources other than cores, memory, or walltime
+[worker.res] # optional
+Token = { token="has-gpu" }
+Capacity = { V=8 }
+
+
 # Parameters for filling out the HPC job script. Can be
 # overridden by `[head.script]` or `[worker.script]`.
 [script]

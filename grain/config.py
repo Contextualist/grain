@@ -14,6 +14,7 @@ DEFAULT_CONF = {
         "name": "w{{HHMMSS}}",
         "log_file": "w{{HHMMSS}}.log",
         "script": {},
+        "res": {},
     },
     "script": {
         "shebang": "#!/bin/bash",

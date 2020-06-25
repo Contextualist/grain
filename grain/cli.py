@@ -148,9 +148,10 @@ def gen_script(conf):
     rmem = int(scriptc.memory/15*14)
     scriptc.walltime, rwalltime = norm_wtime(scriptc.walltime)
     # json.dumps is for linebreak and quote escape
-    scriptc.res_str = json.dumps(_toml_inline(
+    scriptc.res_str = json.dumps(_toml_inline( # only worker uses this
         Node=dict(N=scriptc.cores, M=rmem),
         WTime=dict(T=rwalltime, countdown=True),
+        **conf.worker.res,
     ))
     scriptc.setup, scriptc.cleanup = eval_defer(scriptc.setup_cleanup)
     if conf.custom_system:
