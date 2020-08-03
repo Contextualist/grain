@@ -34,7 +34,7 @@ class GrainRemote(object):
     async def _loop(self, task_status=trio.TASK_STATUS_IGNORED):
         async def heartbeat_s(c):
             while True:
-                await c.try_send(b"HBT")
+                await c.try_send(dict(cmd="HBT"))
                 await trio.sleep(HEARTBEAT_INTERVAL)
         async def heartbeat_n_receive(c):
             async with trio.open_nursery() as _n:
@@ -42,7 +42,7 @@ class GrainRemote(object):
                 while True:
                     with trio.move_on_after(HEARTBEAT_INTERVAL*HEARTBEAT_TOLERANCE):
                         async for x in c:
-                            if x == b"HBT": break
+                            if x == {'cmd':'HBT'}: break
                             yield x
                         else: break
                         continue
@@ -52,13 +52,13 @@ class GrainRemote(object):
         async with self._c:
             task_status.started()
             async for x in heartbeat_n_receive(self._c):
-                tid, r = pickle_loads(x)
-                rq = self.resultq.get(abs(tid))
+                tid, ok, r = x['tid'], x['ok'], x['result']
+                rq = self.resultq.get(tid)
                 if rq:
-                    await rq.send((tid>0, r))
+                    await rq.send((ok, pickle_loads(r)))
                 else:
                     log_event("late_response")
-                    print(f"remote {self.name} received phantom job {abs(tid)}'s result")
+                    print(f"remote {self.name} received phantom job {tid}'s result")
         # well, we just let the remote decide when to leave
         #assert self._c.is_clean is False # NOTE: P2P conn doesn't get EOF when the other end quit, we need to close on our end
         # In case of connection lost, dismiss all pending jobs
@@ -71,7 +71,7 @@ class GrainRemote(object):
         with self.wg:
             self.resultq[tid], rq = trio.open_memory_channel(0)
             try:
-                await self._c.send(pickle_dumps((tid, res, fn)))
+                await self._c.send(dict(tid=tid, res=res, func=pickle_dumps(fn)))
                 with optional_cm(trio.fail_after, getattr(res,'T',-180)+180): # 3min grace period
                     ok, r = await rq.receive()
             except (trio.ClosedResourceError, trio.EndOfChannel):
@@ -84,7 +84,7 @@ class GrainRemote(object):
             del self.resultq[tid]
             return ok, r
     async def aclose(self):
-        await self._c.try_send(b"FIN") # fails if KI or connection lost
+        await self._c.try_send(dict(cmd="FIN")) # fails if KI or connection lost
         print(f"worker {self.name} starts cleaning up")
         await self.wg.wait()
         await self._c.aclose() # for P2P connection
@@ -220,27 +220,27 @@ class GrainManager:
                     msg = await _c.receive()
                 except trio.EndOfChannel:
                     continue
-                cmd, msg = msg[:3], msg[3:]
-                if cmd == b"CON": # connect
-                    vaddr, res = pickle_loads(msg)
+                cmd = msg['cmd']
+                if cmd == "CON": # connect
+                    vaddr, res = msg['name'], msg['res']
                     print(f"worker {vaddr} joined with {res}")
                     await self.register(GrainReverseRemote(_c, vaddr, res), _n)
                     continue
                 async with _c: # The following are ephemeral cmds
-                    if cmd == b"REG": # register
-                        addr, res = pickle_loads(msg)
+                    if cmd == "REG": # register
+                        addr, res = msg['name'], msg['res']
                         print(f"worker {addr} joined with {res}")
                         await self.register(GrainRemote(addr, res), _n)
-                    elif cmd == b"UNR": # unregister
-                        addr = msg.decode()
+                    elif cmd == "UNR": # unregister
+                        addr = msg['name']
                         print(f"worker {addr} asked for quit")
                         await self.unregister(addr)
-                    elif cmd == b"STA": # statistics
+                    elif cmd == "STA": # statistics
                         sta = ls_worker_res(self.pool) + '\n' + \
                               collect_probe()
-                        await _c.try_send(sta.encode())
-                    elif cmd == b"TRM": # graceful termination
-                        addr = msg.decode()
+                        await _c.try_send(dict(result=sta.encode()))
+                    elif cmd == "TRM": # graceful termination
+                        addr = msg['name']
                         print(f"worker {addr} is going to leave")
                         _n.start_soon(self.terminate, addr)
                     else:

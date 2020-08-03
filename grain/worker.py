@@ -20,14 +20,14 @@ async def exerf(tid, res, func, so):
     GVAR.res = res
     try:
         with trio.fail_after(res.T) if hasattr(res, 'T') else nullcontext():
-            r = await func()
+            ok, r = True, await func()
     except BaseException as e:
         if type(e) is trio.Cancelled: e = WorkerCancelled()
-        tid, r = -tid, (traceback.format_exc(), e) # negative tid for failure
+        ok, r = False, (traceback.format_exc(), e)
     finally:
         with trio.move_on_after(3) as cleanup_scope:
             cleanup_scope.shield = True
-            await so.send(pickle_dumps((tid, r)))
+            await so.send(dict(tid=tid, ok=ok, result=pickle_dumps(r)))
 
 NO_NEXT_URL = "NO_NEXT_URL"
 
@@ -47,21 +47,24 @@ async def grain_worker(RES, url):
                trio.open_nursery() as _n:
         await _n.start(subprocess_pool_daemon)
         if not passive:
-            await so.send(b"CON"+pickle_dumps((GVAR.instance, RES)))
+            await so.send(dict(cmd="CON", name=GVAR.instance, res=RES))
         print("worker launched")
         try:
             with timesc:
                 async for msg in so:
-                    if msg == b"FIN": # end of queue / low health / server error
+                    if 'cmd' not in msg:
+                        tid, res, fn = msg['tid'], msg['res'], pickle_loads(msg['func'])
+                        _n.start_soon(exerf, tid, res, fn, so)
+                        continue
+                    cmd = msg['cmd']
+                    if cmd == "FIN": # end of queue / low health / server error
                         print("received FIN from head, worker exits")
                         return NO_NEXT_URL
-                    elif msg == b"HBT": # heartbeat
-                        await so.send(b"HBT")
+                    elif cmd == "HBT": # heartbeat
+                        await so.send(dict(cmd="HBT"))
                         continue
-                    elif msg[:3] == b"REC": # reconnect
-                        return msg[3:].decode()
-                    tid, res, fn = pickle_loads(msg)
-                    _n.start_soon(exerf, tid, res, fn, so)
+                    elif cmd == "REC": # reconnect
+                        return msg['name']
                 else:
                     print("connection to head lost, worker exits")
                     so.send = anop
@@ -71,8 +74,8 @@ async def grain_worker(RES, url):
                 print(f"interrupted by {e.__class__.__name__}")
                 return NO_NEXT_URL # `GVAR.instance` might differ from head's record, so don't notify
             print(f"interrupted by {e.__class__.__name__}, notify head")
-            await notify(url, b"UNR"+GVAR.instance.encode(), seg=True)
-            if (await so.receive()) != b"FIN": assert False
+            await notify(url, dict(cmd="UNR", name=GVAR.instance), seg=True)
+            if (await so.receive()) != {'cmd': 'FIN'}: assert False
             print("received FIN from head, worker exits")
             return NO_NEXT_URL
         finally:

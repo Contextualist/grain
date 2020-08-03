@@ -4,7 +4,8 @@ from math import inf as INFIN
 from functools import partial
 from urllib.parse import urlparse, parse_qsl
 
-from .conn import iter_packet, send_packet, open_tcp_stream_to_head, serve_tcp_p2p
+from .conn import open_tcp_stream_to_head, serve_tcp_p2p
+from .conn_msgp import iter_packet, send_packet
 
 async def notify(url, msg, seg=False): # TODO: retry until connected
     """Open a connection, send `msg`, then close the

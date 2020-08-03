@@ -17,6 +17,7 @@ setuptools.setup(
     install_requires=[
         "trio >= 0.15.0",
         "dill",
+        "msgpack",
         "toml >= 0.10.1",
         "click",
         "psutil",

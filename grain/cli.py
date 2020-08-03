@@ -211,8 +211,8 @@ def ls(conf):
         with _handle_connection_error(head):
             async with trio.open_nursery() as _n, \
                        SocketChannel(f"{head}", dial=True, _n=_n) as c:
-                await c.send(b"STA")
-                print((await c.receive()).decode())
+                await c.send(dict(cmd="STA"))
+                print((await c.receive())['result'].decode())
     trio.run(_ls, getattr(conf.worker, "cli_dial", conf.worker.dial))
 
 @main.command(help="Quit a worker")
@@ -222,7 +222,7 @@ def ls(conf):
 def quit(conf, force, worker_name):
     async def _unreg(head, name):
         with _handle_connection_error(head):
-            await notify(f"{head}", (b"UNR" if force else b"TRM")+name.encode(), seg=True)
+            await notify(f"{head}", dict(cmd="UNR" if force else "TRM", name=name), seg=True)
     trio.run(_unreg, getattr(conf.worker, "cli_dial", conf.worker.dial), worker_name)
 
 @contextmanager

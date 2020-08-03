@@ -45,10 +45,10 @@ async def test_signal(monkeypatch):
         async with SocketChannel("tcp://test:8001", _n=_n, listen=True) as l:
             task_status.started()
             async for m in l:
-                assert m == b"msg"
+                assert m == dict(cmd="test")
                 break
             else:
                 assert False, "SocketChannel close before receiving"
     async with trio.open_nursery() as _n:
         await _n.start(_listen_sc, _n)
-        await notify("tcp://test:8001", b"msg", seg=True)
+        await notify("tcp://test:8001", dict(cmd="test"), seg=True)

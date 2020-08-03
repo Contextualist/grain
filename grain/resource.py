@@ -74,6 +74,8 @@ class Resource(object):
             self.__resm[k]._dealloc(v)
     def stat(self):
         return {k:v._stat() for k,v in self.__resm.items()}
+    def encode_msgp(self):
+        return {k:v._encode_msgp() for k,v in self.__resm.items()}
 
 
 
@@ -117,6 +119,9 @@ class Cores(Resource): # CPU cores
     def _stat(self):
         return len(self.c), self.N
 
+    def _encode_msgp(self):
+        return dict(N=sorted(self.c))
+
 
 class Memory(Resource): # vmem
 
@@ -142,6 +147,9 @@ class Memory(Resource): # vmem
 
     def _stat(self):
         return self.m, self.M
+
+    def _encode_msgp(self):
+        return dict(M=self.M)
 
 
 def Node(N, M):
@@ -176,6 +184,9 @@ class WTime(Resource): # walltime, not restorable
 
     def _stat(self):
         return 1, 1
+
+    def _encode_msgp(self):
+        return dict(T=self.T, softT=self.softT, countdown=bool(self.deadline))
 
 
 class Token(Resource):
