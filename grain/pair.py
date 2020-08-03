@@ -113,7 +113,9 @@ class SocketChannelAcceptor(SocketReceiveChannel):
                                     handler_nursery=self._n, opts=self.opts, cs=self._cs))
         return self
     async def _handler(self, so):
-        host, port = so.socket.getpeername()
+        host, port, *_ = so.socket.getpeername()
+        if so.socket.proto == 6:
+            host = f"[{host}]"
         c = SocketChannel(f"tcp://{host}:{port}", _so=so)
         self.in_s.send_nowait(c)
         await c._handler_standalone(so) # to have the same lifetime as c
