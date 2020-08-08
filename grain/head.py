@@ -36,22 +36,22 @@ class GrainRemote(object):
             while True:
                 await c.try_send(dict(cmd="HBT"))
                 await trio.sleep(HEARTBEAT_INTERVAL)
-        async def heartbeat_n_receive(c):
-            async with trio.open_nursery() as _n:
-                _n.start_soon(heartbeat_s, c)
-                while True:
+        async with self._c, \
+                   trio.open_nursery() as _n:
+            task_status.started()
+            _n.start_soon(heartbeat_s, self._c)
+            while True:
+                x = None
+                try:
                     with trio.move_on_after(HEARTBEAT_INTERVAL*HEARTBEAT_TOLERANCE):
-                        async for x in c:
-                            if x == {'cmd':'HBT'}: break
-                            yield x
-                        else: break
-                        continue
+                        x = await self._c.receive()
+                except trio.EndOfChannel:
+                    break
+                if x is None:
                     print(f"remote {self.name} heartbeat response timeout")
                     break
-                _n.cancel_scope.cancel()
-        async with self._c:
-            task_status.started()
-            async for x in heartbeat_n_receive(self._c):
+                elif x == {'cmd':'HBT'}:
+                    continue
                 tid, ok, r = x['tid'], x['ok'], x['result']
                 rq = self.resultq.get(tid)
                 if rq:
@@ -59,6 +59,7 @@ class GrainRemote(object):
                 else:
                     log_event("late_response")
                     print(f"remote {self.name} received phantom job {tid}'s result")
+            _n.cancel_scope.cancel()
         # well, we just let the remote decide when to leave
         #assert self._c.is_clean is False # NOTE: P2P conn doesn't get EOF when the other end quit, we need to close on our end
         # In case of connection lost, dismiss all pending jobs
