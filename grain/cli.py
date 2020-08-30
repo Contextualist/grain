@@ -3,7 +3,7 @@ import trio
 import toml
 
 from .pair import SocketChannel, notify
-from .config import load_conf, setdefault
+from .config import load_conf, override
 
 from datetime import datetime
 import subprocess
@@ -24,7 +24,7 @@ WORKER_MAIN = """echo "worker {name}'s node is $(hostname)"
 {script.setup}
 
 date
-python -m grain.worker --url {worker.dial} --res {script.res_str}
+python -m grain.worker --url {worker.dial} --res {script.res_str} --context {contextmod!r}
 date
 
 {script.cleanup}
@@ -176,10 +176,9 @@ def main():
 @click.option('--dry', is_flag=True, help="Dry run. Print out the job submission script without submitting. This ignores `-n`.")
 @click.pass_context
 def up(ctx, conf, n, dry):
-    setdefault(conf.worker.script, conf.script)
-    conf.script = conf.worker.script
+    override(conf, conf.worker)
     scmd, temp = gen_script(conf)
-    sc = temp.replace("{{MAIN}}", WORKER_MAIN).format(**conf, name=conf.worker.name, log_file=conf.worker.log_file)
+    sc = temp.replace("{{MAIN}}", WORKER_MAIN).format(**conf)
     if dry:
         print(eval_var(sc))
         return
@@ -192,10 +191,10 @@ def up(ctx, conf, n, dry):
 @click.option('--local', is_flag=True, help="Run locally instead of submitting a job")
 @click.option('--dry', is_flag=True, help="Dry run. Print out the job submission script without submitting")
 def start(conf, local, dry):
-    setdefault(conf.head.script, conf.script)
-    conf.script = conf.head.script
+    override(conf, conf.head)
     scmd, temp = gen_script(conf)
-    sc = temp.replace("{{MAIN}}", HEAD_MAIN).format(**conf, name=conf.head.name, log_file=conf.head.main_log_file)
+    conf.log_file = conf.head.main_log_file # We want to record Grain's log
+    sc = temp.replace("{{MAIN}}", HEAD_MAIN).format(**conf)
     if dry:
         print(eval_var(sc))
         return

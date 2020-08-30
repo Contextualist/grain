@@ -11,7 +11,7 @@ from io import StringIO
 from .contextvar import GVAR
 from . import resource
 from .pair import notify, SocketChannel
-from .subproc import subprocess_pool_daemon
+from .util import load_contextmod, nullacontext
 
 pickle_dumps = partial(pickle.dumps, protocol=4)
 pickle_loads = pickle.loads
@@ -19,7 +19,7 @@ pickle_loads = pickle.loads
 async def exerf(tid, res, func, so):
     GVAR.res = res
     try:
-        with trio.fail_after(res.T) if hasattr(res, 'T') else nullcontext():
+        with trio.fail_after(res.T) if hasattr(res, 'T') else nullacontext():
             ok, r = True, await func()
     except BaseException as e:
         if type(e) is trio.Cancelled: e = WorkerCancelled()
@@ -32,7 +32,7 @@ async def exerf(tid, res, func, so):
 NO_NEXT_URL = "NO_NEXT_URL"
 
 async def grain_worker(RES, url):
-    timesc = nullcontext()
+    timesc = nullacontext()
     if hasattr(RES, 'T'):
         timesc = trio.fail_after(max(int(RES.deadline - time.time()), 0))
     passive = not (url and RES)
@@ -45,7 +45,6 @@ async def grain_worker(RES, url):
     async with trio.open_nursery() as _cn, \
                SocketChannel(**sockopt, _n=_cn) as so, \
                trio.open_nursery() as _n:
-        await _n.start(subprocess_pool_daemon)
         if not passive:
             await so.send(dict(cmd="CON", name=GVAR.instance, res=RES))
         print("worker launched")
@@ -84,8 +83,9 @@ async def grain_worker(RES, url):
 async def __loop():
     RES = parse_res(carg.res)
     url = carg.url
-    while url != NO_NEXT_URL:
-        url = await grain_worker(RES, url)
+    async with load_contextmod(carg.context)():
+        while url != NO_NEXT_URL:
+            url = await grain_worker(RES, url)
 
 def parse_res(res_str):
     res_dict = toml.load(StringIO(res_str.replace('\\n', '\n')))
@@ -93,10 +93,6 @@ def parse_res(res_str):
     for rn, rargs in res_dict.items():
         RES &= getattr(resource, rn)(**rargs)
     return RES
-
-class nullcontext(object):
-    def __enter__(self): return self
-    def __exit__(self, *exc): return False
 
 async def anop(*_): pass
 
@@ -109,6 +105,7 @@ if __name__ == "__main__":
     argp.add_argument('--url', default="", help="URL to connect to Grain's head instance")
     argp.add_argument('--res', '-r', default="None", help=r'the resource owned by the worker, in TOML '
                                                           r'(e.g. "Node = { N=16, M=32 }\nWTime = { T=\"1:00:00\", countdown=true }")')
+    argp.add_argument('--context', default="", help="context module file")
     carg = argp.parse_args()
 
     GVAR.instance = trio.socket.gethostname()

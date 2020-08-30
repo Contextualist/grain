@@ -9,12 +9,12 @@ from contextlib import redirect_stdout, redirect_stderr, ExitStack
 import sys
 
 from .contextvar import GVAR
-from .util import timeblock, WaitGroup, nullacontext, optional_cm, make_prependable
+from .util import timeblock, WaitGroup, nullacontext, optional_cm, make_prependable, load_contextmod
 from .resource import ZERO, Reject
 from .pair import SocketChannel, SocketChannelAcceptor
 from .subproc import subprocess_pool_daemon, BrokenSubprocessError
 from .stat import log_event, log_timestart, log_timeend, stat_logger, ls_worker_res, reg_probe, collect_probe
-from .config import load_conf
+from .config import load_conf, override
 
 FULL_HEALTH = 3
 STATSPAN = 15 # minutes
@@ -114,7 +114,7 @@ class _cobj:
             return getattr(self._h, attr)
         return getattr(self._dh, attr)
 class GrainPseudoRemote:
-    def __init__(self, res, out=""):
+    def __init__(self, res, out="", cmod=""):
         self.res = res
         self.name = f"{trio.socket.gethostname()}(local)"
         self.health = FULL_HEALTH
@@ -125,13 +125,20 @@ class GrainPseudoRemote:
             outh = self.redi_cm.enter_context(open(out,'w'))
             self.redi_cm.enter_context(redirect_stdout(_cobj(outh,sys.stdout)))
             self.redi_cm.enter_context(redirect_stderr(_cobj(outh,sys.stderr)))
+        self.cmod = cmod
+    async def _scope(self, task_status=trio.TASK_STATUS_IGNORED):
+        with trio.CancelScope() as cs, \
+             self.redi_cm:
+            self.cg.add(cs)
+            async with load_contextmod(self.cmod)():
+                task_status.started()
+                await trio.sleep_forever()
     async def connect(self, _n):
-        if self.res > ZERO:
-            self.cg.add(await _n.start(subprocess_pool_daemon))
+        await _n.start(self._scope)
     async def execf(self, tid, res, fn):
-        cs = trio.CancelScope()
-        self.cg.add(cs)
-        with self.wg, cs:
+        with self.wg, \
+             trio.CancelScope() as cs:
+            self.cg.add(cs)
             GVAR.res = res
             GVAR.instance = "local"
             try:
@@ -148,7 +155,6 @@ class GrainPseudoRemote:
             cs.cancel()
         print(f"worker {self.name} starts cleaning up")
         await self.wg.wait()
-        self.redi_cm.__exit__(None, None, None)
         print(f"worker {self.name} clear")
 
 
@@ -287,11 +293,12 @@ class GrainExecutor(object):
         self._n = _n
         self._wg = WaitGroup() # track the entire lifetime of each job
         self.reschedule = reschedule
-        conf_head = load_conf(config_file).head
+        conf = load_conf(config_file)
+        override(conf, conf.head)
         self.mgr = GrainManager(
-            [GrainPseudoRemote(deepcopy(rpw if not nolocal else ZERO), conf_head.log_file)] + \
+            [GrainPseudoRemote(deepcopy(rpw if not nolocal else ZERO), conf.log_file, conf.contextmod)] + \
             [GrainRemote(a, deepcopy(rpw)) for a in waddrs],
-            self._n, temporary_err, persistent, conf_head.listen)
+            self._n, temporary_err, persistent, conf.listen)
         reg_probe("queued jobs", lambda: len(self.push_job._state.data))
         self.stat_tag = stat_tag
 

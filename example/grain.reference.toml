@@ -12,6 +12,12 @@
 # Supported: slurm, pbs, pbs_wrap
 system = "slurm"
 
+# Context module loaded in head and worker's runtime.
+# If given, it should be the path to a Python file with an async context
+# manager named `grain_context`.
+# Can be overriden by `head.contextmod` and `worker.contextmod`.
+contextmod = "" # optional
+
 
 [head]
 
@@ -84,7 +90,7 @@ extra_args = [] # optional
 # All the other lines are setup commands to be
 # executed before launching the worker process.
 setup_cleanup = '''
-module load /N/soft/cle6/modules/APPLICATIONS/gaussian/16
+module load /N/soft/cle7/modules/APPLICATIONS/gaussian/16
 
 export GAUSS_SCRDIR="/PATH/TO/GAUSCRDIR/$(hostname)"
 mkdir -p $GAUSS_SCRDIR

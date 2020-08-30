@@ -2,6 +2,8 @@ from contextlib import ContextDecorator
 from timeit import default_timer as timer
 from functools import wraps
 import types
+import importlib.util
+from pathlib import Path
 from math import inf as INF
 
 def timeblock(text="this block", enter=False):
@@ -184,6 +186,15 @@ def optional_cm(cm, cond_arg):
     if cond_arg:
         return cm(cond_arg)
     return nullacontext()
+
+def load_contextmod(modp):
+    if modp == "":
+        return nullacontext
+    p = Path(modp)
+    spec = importlib.util.spec_from_file_location(p.stem, p)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.grain_context
 
 def set_numpy_oneline_repr():
     """Change the default Numpy array ``__repr__`` to a

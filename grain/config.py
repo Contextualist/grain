@@ -3,6 +3,7 @@ import toml
 from os import environ as ENV
 
 DEFAULT_CONF = {
+    "contextmod": "",
     "head": {
         "name": "grain_head",
         "main_log_file": "/dev/null",
@@ -45,6 +46,12 @@ def setdefault(d, dflt): # NOTE: not dealing with list & tuple
             continue
         if isinstance(v, dict):
             setdefault(d[k],v)
+def override(d, sup):
+    for k,v in sup.items():
+        if k in d and isinstance(v, dict):
+            override(d[k],v)
+        else:
+            d[k] = v
 
 class odict(dict):
     def __init__(self, d):
