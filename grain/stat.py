@@ -1,6 +1,8 @@
 import time
 from datetime import datetime
 from bisect import bisect_right
+import logging
+logger = logging.getLogger(__name__)
 
 import trio
 from async_generator import asynccontextmanager
@@ -50,7 +52,7 @@ async def stat_logger(span):
     async def _loop():
         while True:
             await trio.sleep(span*60)
-            print(f"[{datetime.now().strftime('%y/%m/%d %H:%M:%S')}]\t{tally(span)}", flush=True)
+            logger.info(tally(span))
     async with trio.open_nursery() as _n:
         _n.start_soon(_loop)
         try:

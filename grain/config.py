@@ -1,6 +1,8 @@
 import toml
 
 from os import environ as ENV
+import logging
+logger = logging.getLogger(__name__)
 
 DEFAULT_CONF = {
     "contextmod": "",
@@ -28,13 +30,13 @@ DEFAULT_CONF = {
 
 def load_conf(config=None):
     if config is False:
-        print("Config file is disabled, using default settings.")
+        logger.info("Config file is disabled, using default settings.")
         return odict(DEFAULT_CONF)
     config = config or ENV.get("GRAIN_CONFIG", "grain.toml")
     try:
         conf = toml.load(config)
     except FileNotFoundError:
-        print(f"Cannot find Grain config file {config!r}, using default settings.")
+        logger.warning(f"Cannot find Grain config file {config!r}, using default settings.")
         conf = {}
     setdefault(conf, DEFAULT_CONF)
     return odict(conf)

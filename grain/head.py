@@ -7,6 +7,8 @@ from functools import partial
 import traceback
 from contextlib import redirect_stdout, redirect_stderr, ExitStack
 import sys
+import logging
+logger = logging.getLogger(__name__)
 
 from .contextvar import GVAR
 from .util import timeblock, WaitGroup, nullacontext, optional_cm, make_prependable, load_contextmod
@@ -48,7 +50,7 @@ class GrainRemote(object):
                 except trio.EndOfChannel:
                     break
                 if x is None:
-                    print(f"remote {self.name} heartbeat response timeout")
+                    logger.warning(f"remote {self.name} heartbeat response timeout")
                     break
                 elif x == {'cmd':'HBT'}:
                     continue
@@ -58,7 +60,7 @@ class GrainRemote(object):
                     await rq.send((ok, pickle_loads(r)))
                 else:
                     log_event("late_response")
-                    print(f"remote {self.name} received phantom job {tid}'s result")
+                    logger.warning(f"remote {self.name} received phantom job {tid}'s result")
             _n.cancel_scope.cancel()
         # well, we just let the remote decide when to leave
         #assert self._c.is_clean is False # NOTE: P2P conn doesn't get EOF when the other end quit, we need to close on our end
@@ -86,10 +88,10 @@ class GrainRemote(object):
             return ok, r
     async def aclose(self):
         await self._c.try_send(dict(cmd="FIN")) # fails if KI or connection lost
-        print(f"worker {self.name} starts cleaning up")
+        logger.info(f"worker {self.name} starts cleaning up")
         await self.wg.wait()
         await self._c.aclose() # for P2P connection
-        print(f"worker {self.name} clear")
+        logger.info(f"worker {self.name} clear")
 
 class GrainReverseRemote(GrainRemote):
     """A Grain remote for which the worker dial in
@@ -153,9 +155,9 @@ class GrainPseudoRemote:
     async def aclose(self):
         for cs in self.cg:
             cs.cancel()
-        print(f"worker {self.name} starts cleaning up")
+        logger.info(f"worker {self.name} starts cleaning up")
         await self.wg.wait()
-        print(f"worker {self.name} clear")
+        logger.info(f"worker {self.name} clear")
 
 
 class GrainManager:
@@ -182,9 +184,9 @@ class GrainManager:
             w.health -= 1 if type(err) in self.temperr else INFIN
             if w.health <= 0 and w in self.pool:
                 if type(err) not in self.temperr:
-                    print(tb)
+                    logger.error(tb)
                 if w.name.endswith('(local)'): raise RuntimeError("local worker quits")
-                print(f"quit worker {w.name} due to poor health {w.health}")
+                logger.warning(f"quit worker {w.name} due to poor health {w.health}")
                 await self.unregister(w.name, locked=True)
 
     async def dealloc(self, w, res):
@@ -230,17 +232,17 @@ class GrainManager:
                 cmd = msg['cmd']
                 if cmd == "CON": # connect
                     vaddr, res = msg['name'], msg['res']
-                    print(f"worker {vaddr} joined with {res}")
+                    logger.info(f"worker {vaddr} joined with {res}")
                     await self.register(GrainReverseRemote(_c, vaddr, res), _n)
                     continue
                 async with _c: # The following are ephemeral cmds
                     if cmd == "REG": # register
                         addr, res = msg['name'], msg['res']
-                        print(f"worker {addr} joined with {res}")
+                        logger.info(f"worker {addr} joined with {res}")
                         await self.register(GrainRemote(addr, res), _n)
                     elif cmd == "UNR": # unregister
                         addr = msg['name']
-                        print(f"worker {addr} asked for quit")
+                        logger.info(f"worker {addr} is quitting now")
                         await self.unregister(addr)
                     elif cmd == "STA": # statistics
                         sta = ls_worker_res(self.pool) + '\n' + \
@@ -248,10 +250,10 @@ class GrainManager:
                         await _c.try_send(dict(result=sta.encode()))
                     elif cmd == "TRM": # graceful termination
                         addr = msg['name']
-                        print(f"worker {addr} is going to leave")
+                        logger.info(f"worker {addr} is going to leave")
                         _n.start_soon(self.terminate, addr)
                     else:
-                        print(f"worker manager received unknown command {cmd} from {_c.host}")
+                        logger.warning(f"worker manager received unknown command {cmd} from {_c.host}")
 
     async def __aenter__(self):
         await self._n.start(self.worker_manager)
@@ -330,7 +332,7 @@ class GrainExecutor(object):
                 tb, err = r
                 if not self.reschedule:
                     raise RuntimeError(f"worker {w.name}'s task {fn} raises {err.__class__.__name__}: {err}, abort.")
-                print(f"worker {w.name}'s task {fn} raises {err.__class__.__name__}: {err}, going to reschedule it...")
+                logger.error(f"worker {w.name}'s task {fn} raises {err.__class__.__name__}: {err}, going to reschedule it...")
                 await self.mgr.health_check(w, tb, err)
                 self.resubmit(tid, res, fn) # preserve tid
             await self.mgr.dealloc(w, res)

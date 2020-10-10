@@ -7,10 +7,11 @@ import io
 from contextlib import contextmanager
 from functools import partial
 from math import inf as INFIN
+import logging
+logger = logging.getLogger(__name__)
 
 RENDEZVOUS_TIMEOUT = 10
 CONNECT_RETRY_INTERVAL = 1
-debug_net = lambda *_: None
 
 # +--------+-----------+
 # | LEN(4) | DATA(LEN) |
@@ -24,29 +25,29 @@ async def bound_socket(local_addr):
     if hasattr(socket, "SO_REUSEPORT"):
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
     await s.bind(local_addr)
-    debug_net(f"socket bound to {local_addr} created")
+    logger.debug(f"socket bound to {local_addr} created")
     return s
 
 async def accept(s, win_s):
     with closing_otherwise(s):
-        debug_net("Accepting...")
+        logger.debug("Accepting...")
         s.listen()
         conn, _ = await s.accept()
-        debug_net("Accepted")
+        logger.debug("Accepted")
         win_s.send_nowait(conn)
 
 async def connect(s, peer_addr, win_s):
     with closing_otherwise(s):
-        debug_net(f"Connecting to {peer_addr}")
+        logger.debug(f"Connecting to {peer_addr}")
         while True:
             try:
                 await s.connect(peer_addr)
             except Exception as e:
-                debug_net(e)
+                logger.debug(e)
                 await trio.sleep(CONNECT_RETRY_INTERVAL)
                 continue
             else:
-                debug_net(f"Connected {peer_addr}")
+                logger.debug(f"Connected {peer_addr}")
                 break
         win_s.send_nowait(s)
 
@@ -68,19 +69,19 @@ async def init_conn(bridge, iface=""):
             s_acp = await bound_socket(('', priv_port)) # for accept
             break
         except OSError: # NOTE: albeit SO_REUSEADDR set, bind still occassionally fails
-            debug_net(f"cannot bind to private addr {priv_host}:{priv_port}, retry") 
+            logger.debug(f"cannot bind to private addr {priv_host}:{priv_port}, retry")
             sa.close()
             await trio.sleep(0.1)
             continue
     else:
         raise OSError("failed to bind to a local address")
-    debug_net(f"self's private addr {priv_host}:{priv_port}")
+    logger.debug(f"self's private addr {priv_host}:{priv_port}")
     return trio.SocketStream(sa), f"{priv_host}:{priv_port}", s_acp, s_cona, s_conb
 
 async def hole_punching(peer, s_acp, s_cona, s_conb):
     peer_publ_addr, peer_priv_addr = peer
     peer_publ_addr, peer_priv_addr = parse_addr(peer_publ_addr), parse_addr(peer_priv_addr)
-    debug_net(f"peer's public addr {peer_publ_addr}, private addr {peer_priv_addr}")
+    logger.debug(f"peer's public addr {peer_publ_addr}, private addr {peer_priv_addr}")
 
     win_s, win_r = trio.open_memory_channel(1)
     async with trio.open_nursery() as _n:
@@ -200,4 +201,4 @@ def suppress_then_log(exctype=Exception):
     try:
         yield
     except exctype as e:
-        print(f"{e.__class__.__name__}: {e}")
+        logger.warning(f"{e.__class__.__name__}: {e}")

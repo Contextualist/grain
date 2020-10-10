@@ -7,6 +7,8 @@ import traceback
 import argparse
 import time
 from io import StringIO
+import logging
+logger = logging.getLogger(__name__)
 
 from .contextvar import GVAR
 from . import resource
@@ -38,16 +40,16 @@ async def grain_worker(RES, url):
     passive = not (url and RES)
     if passive:
         sockopt = dict(url="tcp://:4242", listen=True)
-        print("passive mode enabled")
+        logger.info("passive mode enabled")
     else:
         sockopt = dict(url=url, dial=True) # TODO: connection timeout
-        print(f"connecting to head using {url!r}...")
+        logger.info(f"connecting to head using {url!r}...")
     async with trio.open_nursery() as _cn, \
                SocketChannel(**sockopt, _n=_cn) as so, \
                trio.open_nursery() as _n:
         if not passive:
             await so.send(dict(cmd="CON", name=GVAR.instance, res=RES))
-        print("worker launched")
+        logger.info("worker launched")
         try:
             with timesc:
                 async for msg in so:
@@ -57,7 +59,7 @@ async def grain_worker(RES, url):
                         continue
                     cmd = msg['cmd']
                     if cmd == "FIN": # end of queue / low health / server error
-                        print("received FIN from head, worker exits")
+                        logger.info("received FIN from head, worker exits")
                         return NO_NEXT_URL
                     elif cmd == "HBT": # heartbeat
                         await so.send(dict(cmd="HBT"))
@@ -65,17 +67,17 @@ async def grain_worker(RES, url):
                     elif cmd == "REC": # reconnect
                         return msg['name']
                 else:
-                    print("connection to head lost, worker exits")
+                    logger.warning("connection to head lost, worker exits")
                     so.send = anop
                     return url # connection loss, reconnect to the same addr?
         except BaseException as e:
             if passive:
-                print(f"interrupted by {e.__class__.__name__}")
+                logger.info(f"interrupted by {e.__class__.__name__}")
                 return NO_NEXT_URL # `GVAR.instance` might differ from head's record, so don't notify
-            print(f"interrupted by {e.__class__.__name__}, notify head")
+            logger.info(f"interrupted by {e.__class__.__name__}, notify head")
             await notify(url, dict(cmd="UNR", name=GVAR.instance), seg=True)
             if (await so.receive()) != {'cmd': 'FIN'}: assert False
-            print("received FIN from head, worker exits")
+            logger.info("received FIN from head, worker exits")
             return NO_NEXT_URL
         finally:
             _n.cancel_scope.cancel()
