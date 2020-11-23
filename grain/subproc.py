@@ -1,5 +1,4 @@
 import trio
-from async_generator import asynccontextmanager
 import dill as pickle
 
 from functools import wraps, partial
@@ -8,6 +7,7 @@ import sys
 import os
 from math import inf as INFIN
 from subprocess import SubprocessError
+from contextlib import asynccontextmanager
 
 from grain.contextvar import GVAR # process local
 

@@ -1,11 +1,11 @@
 import time
 from datetime import datetime
 from bisect import bisect_right
+from contextlib import asynccontextmanager
 import logging
 logger = logging.getLogger(__name__)
 
 import trio
-from async_generator import asynccontextmanager
 
 MAXSPAN = 30 # in min
 

@@ -1,10 +1,9 @@
 import trio
 from trio import socket
-from async_generator import asynccontextmanager
 
 import struct
 import io
-from contextlib import contextmanager
+from contextlib import contextmanager, asynccontextmanager
 from functools import partial
 from math import inf as INFIN
 import logging

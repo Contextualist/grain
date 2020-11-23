@@ -1,4 +1,4 @@
-from contextlib import ContextDecorator
+from contextlib import ContextDecorator, asynccontextmanager
 from timeit import default_timer as timer
 from functools import wraps
 import types
@@ -22,7 +22,6 @@ def timeblock(text="this block", enter=False):
 import trio
 from trio.lowlevel import ParkingLot, checkpoint, enable_ki_protection
 from outcome import Value
-from async_generator import asynccontextmanager
 
 class WaitGroup(object):
 
