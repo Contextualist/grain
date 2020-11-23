@@ -206,6 +206,8 @@ def set_numpy_oneline_repr():
     EDGEITEMS = 3
     def oneline_repr(a):
         N = np.prod(a.shape)
+        if N == 0: # No numbers to show if the last dimension is zero
+            return f"array[{a.shape}]([])"
         ind = np.unravel_index(range(min(EDGEITEMS, N)), a.shape)
         afew = []
         for x,val in zip(np.c_[ind], a[ind]):
