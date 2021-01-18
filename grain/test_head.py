@@ -64,3 +64,58 @@ log_file = "/dev/null"''')) as exer:
         exer.submit(ZERO, say_something)
     captured = capsys.readouterr()
     assert "something\n" not in captured.out
+
+
+class MockRemote(GrainPseudoRemote):
+    def __init__(self, name):
+        self.res = Memory(1)
+        self.name = name
+        self.health = FULL_HEALTH
+        self.wg = WaitGroup()
+        self.cg = set()
+    async def connect(self, _n):
+        pass
+
+async def test_manager(autojump_clock):
+    def _assert_qlen(q, l):
+        assert len(q._state.data) == l
+    def _from_result_take_exactly(n):
+        _assert_qlen(exer.resultq, n)
+        [exer.resultq.receive_nowait() for _ in range(n)]
+    async def _job():
+        await trio.sleep(3)
+        return "retval"
+
+    pool = map(MockRemote, ["w0", "u0", "w1"])
+    async with trio.open_nursery() as _n, \
+               GrainExecutor(_n=_n) as exer:
+        # release queued job when there're new resources
+        exer.submit(Memory(1), _job)
+        for w in pool:
+            await exer.mgr.register(w, _n)
+        await trio.sleep(3.1)
+        _from_result_take_exactly(1)
+
+        # terminate waits for pending jobs to finish
+        exer.submit(Memory(1), _job)
+        exer.submit(Memory(1), _job)
+        _assert_qlen(exer.resultq, 0)
+        await trio.sleep(.1)
+        _assert_qlen(exer.push_job, 0)
+        await exer.mgr.terminate("w?")
+        assert len(exer.mgr.pool) == 1+3
+        await trio.sleep(3)
+        _from_result_take_exactly(2)
+        assert len(exer.mgr.pool) == 1+1 and exer.mgr.pool[1].name == "u0"
+
+        # unregister cancels all pending jobs
+        exer.submit(Memory(1), _job)
+        await trio.sleep(.1)
+        _assert_qlen(exer.resultq, 0)
+        await exer.mgr.unregister("*")
+        assert len(exer.mgr.pool) == 1+0
+        _assert_qlen(exer.resultq, 0)
+        # cleanup
+        await exer.mgr.register(MockRemote("_cleanup"), _n)
+        await trio.sleep(3.1)
+        _from_result_take_exactly(1)

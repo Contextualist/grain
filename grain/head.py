@@ -7,6 +7,7 @@ from functools import partial
 import traceback
 from contextlib import redirect_stdout, redirect_stderr, ExitStack
 import sys
+from fnmatch import fnmatchcase
 import logging
 logger = logging.getLogger(__name__)
 
@@ -148,7 +149,6 @@ class GrainPseudoRemote:
                     ok, r = True, await fn()
                     self.health = FULL_HEALTH
             except BaseException as e:
-                if type(e) is trio.Cancelled: raise
                 ok, r = False, (traceback.format_exc(), e)
             self.cg.remove(cs)
             return ok, r
@@ -200,23 +200,28 @@ class GrainManager:
         async with self.cond_res:
             self.pool.append(w)
             self.cond_res.notify()
-    async def unregister(self, name, locked=False):
+    def _match_workers(self, p):
+        # results are only meaningful within cond_res
+        return [(i,w) for i,w in enumerate(self.pool)
+                if fnmatchcase(w.name,p) and not w.name.endswith('(local)')]
+    async def unregister(self, pattern, locked=False):
         async with nullacontext() if locked else self.cond_res:
-            # expect one and only name
-            i,w = next(((i,x) for i,x in enumerate(self.pool) if x.name==name), (0,None))
-            if not i: return
-            self.pool.pop(i)
-            await w.aclose() # notify exit and reschedule pending jobs
-            if not self.persistent:
-                raise RuntimeError(f"worker {name} exits, abort.")
-    async def terminate(self, name):
+            for i,w in reversed(self._match_workers(pattern)):
+                logger.info(f"worker {w.name} is quitting now")
+                await w.aclose() # notify exit and reschedule pending jobs
+                if not self.persistent:
+                    raise RuntimeError(f"worker {w.name} exits, abort.")
+                del self.pool[i]
+    async def terminate(self, pattern):
+        async def _wait_n_unreg(w):
+            await w.wg.wait() # wait till no job is running
+            await self.unregister(w.name) # `self.pool` might have changed, do another lookup
         async with self.cond_res:
-            # expect one and only name
-            w = next((x for x in self.pool if x.name==name), None)
-            if not w or type(w.res) is Reject: return
-            w.res = Reject(w.res)
-        await w.wg.wait() # wait till no job is running
-        await self.unregister(name)
+            for _,w in self._match_workers(pattern):
+                if type(w.res) is Reject: continue
+                logger.info(f"worker {w.name} is going to leave")
+                w.res = Reject(w.res)
+                self._n.start_soon(_wait_n_unreg, w)
 
     async def worker_manager(self, task_status=trio.TASK_STATUS_IGNORED):
         async with trio.open_nursery() as _n, \
@@ -241,17 +246,15 @@ class GrainManager:
                         logger.info(f"worker {addr} joined with {res}")
                         await self.register(GrainRemote(addr, res), _n)
                     elif cmd == "UNR": # unregister
-                        addr = msg['name']
-                        logger.info(f"worker {addr} is quitting now")
-                        await self.unregister(addr)
+                        pattern = msg['name']
+                        await self.unregister(pattern)
                     elif cmd == "STA": # statistics
                         sta = ls_worker_res(self.pool) + '\n' + \
                               collect_probe()
                         await _c.try_send(dict(result=sta.encode()))
                     elif cmd == "TRM": # graceful termination
-                        addr = msg['name']
-                        logger.info(f"worker {addr} is going to leave")
-                        _n.start_soon(self.terminate, addr)
+                        pattern = msg['name']
+                        await self.terminate(pattern)
                     else:
                         logger.warning(f"worker manager received unknown command {cmd} from {_c.host}")
 

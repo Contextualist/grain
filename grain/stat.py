@@ -1,3 +1,5 @@
+from .resource import Reject
+
 import time
 from datetime import datetime
 from bisect import bisect_right
@@ -68,14 +70,14 @@ RES_TYPES = ("Cores", "Memory")
 def ls_worker_res(workers):
     fs = ""
     len_name = max(len(w.name) for w in workers) + 4
-    FMT = "{:>"+str(len_name)+"}" + "{:>10}"*len(RES_TYPES) + "\n"
+    FMT = "{:>"+str(len_name)+"}" + "{:>10}"*len(RES_TYPES) + "  {}\n"
     def row(*cel):
         nonlocal fs
         fs += FMT.format(*cel)
     def ratio_map(pqs):
         return (f"{p}/{q}" for p,q in pqs)
     total = [[0,0] for _ in range(len(RES_TYPES))]
-    row("", *RES_TYPES)
+    row("", *RES_TYPES, "")
     for w in workers:
         wstat = w.res.stat()
         one = []
@@ -83,8 +85,8 @@ def ls_worker_res(workers):
             p,q = wstat.get(rt, (0,0))
             total[i][0] += p; total[i][1] += q
             one.append([p,q])
-        row(w.name, *ratio_map(one))
-    row("TOTAL", *ratio_map(total))
+        row(w.name, *ratio_map(one), "paused" if type(w.res) is Reject else "")
+    row("TOTAL", *ratio_map(total), "")
     return fs
 
 
