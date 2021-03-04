@@ -13,7 +13,7 @@ from collections.abc import Iterable
 
 
 async def each(*dos):
-    """A convinient helper function to await on a list of delayed
+    r"""A convinient helper function to await on a list of delayed
     objects.
 
     Args:
@@ -315,7 +315,7 @@ def run(subtasks, *args, **kwargs):
         exception instead of resubmitting the failed tasklet.
       persistent (bool): Default to true. If false, abort the scheduler whenever
         a worker quits prematurely.
-      config_file (str or None): Grain's config file name. If not set or None,
+      config_file (Union[str, False, None]): Grain's config file name. If not set or None,
         Grain will use the name provided by envar ``GRAIN_CONFIG``, and finally
         fallback to name ``grain.toml``. If set to False, Grain will use the
         default profile (see ``config.py``).

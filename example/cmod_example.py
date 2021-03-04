@@ -1,7 +1,7 @@
 from grain.subproc import subprocess_pool_scope
 from rear import rear_fs
 
-from async_generator import asynccontextmanager
+from contextlib import asynccontextmanager
 
 @asynccontextmanager
 async def grain_context():

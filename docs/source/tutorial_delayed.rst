@@ -12,7 +12,7 @@ sections of `Trio's tutorial <https://trio.readthedocs.io/en/stable/tutorial.htm
 Before you begin
 ----------------
 
-1. Make sure you're using Python 3.6 or newer.
+1. Make sure you're using Python 3.7 or newer.
 
 2. ``pip install --upgrade grain-scheduler``
 

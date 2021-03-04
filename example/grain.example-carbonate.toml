@@ -1,4 +1,4 @@
-system = "pbs_wrap"
+system = "slurm"
 
 [head]
 listen = "tcp://:4242"
