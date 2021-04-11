@@ -113,6 +113,7 @@ class SocketChannelAcceptor(SocketReceiveChannel):
                                     handler_nursery=self._n, opts=self.opts, cs=self._cs))
         return self
     async def _handler(self, so):
+        # TODO: support unix server
         host, port, *_ = so.socket.getpeername()
         if so.socket.proto == 6:
             host = f"[{host}]"
@@ -128,6 +129,8 @@ async def open_tcp_stream(proto, host, port, opts=None):
     elif proto == "bridge":
         assert opts
         return await open_tcp_stream_to_head(bridge=(host, port), **opts)
+    elif proto == "unix":
+        return await trio.open_unix_socket(host)
 
 # adapted from `trio.serve_tcp`, adding a CancelScope that terminates the listeners
 async def serve_tcp(proto, handler, port, cs, *, host=None, handler_nursery=None, opts=None, task_status=trio.TASK_STATUS_IGNORED):
@@ -138,6 +141,8 @@ async def serve_tcp(proto, handler, port, cs, *, host=None, handler_nursery=None
         elif proto == "bridge":
             assert opts
             await serve_tcp_p2p(handler, bridge=(host,port), handler_nursery=handler_nursery, task_status=task_status, **opts)
+        elif proto == "unix":
+            raise NotImplementedError("Unix domain socket server is not supported")
 
 def parse_url(url):
     u = urlparse(url)
@@ -146,5 +151,7 @@ def parse_url(url):
     elif u.scheme == "bridge":
         assert u.username, "a session key must be specified for the bridge protocol"
         return u.scheme, u.hostname, u.port, { "key": u.username, **dict(parse_qsl(u.query)) }
+    elif u.scheme == "unix":
+        return u.scheme, u.path, None, {}
     else:
         raise ValueError(f"Unsupported protocol {u.scheme!r}")
