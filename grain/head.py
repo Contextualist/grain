@@ -317,6 +317,9 @@ class GrainExecutor(object):
         tid = self.jobn = self.jobn+1
         self.push_job.send_nowait((tid, res, partial(fn, *args, **kwargs)))
         return tid
+    def _submit(self, tid, res, fn): # for internal use
+        self._wg.add()
+        self.push_job.send_nowait((tid, res, fn))
     def resubmit(self, tid, res, fn):
         self._wg.add()
         self.push_job.cutin_nowait((tid, res, fn)) # prepend the queue

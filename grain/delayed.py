@@ -279,11 +279,13 @@ async def relay(inq):
 async def boot(subtasks, args, kwargs):
     global exer, _gn, rch
     from .head import GrainExecutor
+    from .remote_exer import RemoteExecutor
+    Exer = RemoteExecutor if 'gnaw' in kwargs else GrainExecutor
     from .delayed import relay # no global dependency
     from .util import open_ordered_nursery
     from collections.abc import Iterable
     async with trio.open_nursery() as _n, \
-               GrainExecutor(_n=_n, *args, **kwargs) as exer:
+               Exer(_n=_n, *args, **kwargs) as exer:
         rch = {}
         _n.start_soon(relay, exer.resultq)
         GVAR.instance = "N/A"
@@ -322,5 +324,8 @@ def run(subtasks, *args, **kwargs):
       stat_tag (Callable[~grain.resource.Resource, str]): Define how time statistics
         is categorized by resource. Jobs with resource that maps to the same
         str are grouped together.
+      gnaw (Optional[str]): If set, connect to the Gnaw executor with address
+        ``gnaw`` instead of using the built-in executor. If an empty str is
+        given, a Gnaw executor is started as a subprocess.
     """
     trio.run(boot, subtasks, args, kwargs)
