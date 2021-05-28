@@ -10,7 +10,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 RENDEZVOUS_TIMEOUT = 10
-CONNECT_RETRY_INTERVAL = 1
+CONNECT_RETRY_INTERVAL = 0.5
 
 # +--------+-----------+
 # | LEN(4) | DATA(LEN) |

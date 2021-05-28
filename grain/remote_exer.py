@@ -17,12 +17,13 @@ pickle_loads = pickle.loads
 
 class RemoteExecutor:
     """Pass the jobs on to an external scheduler"""
-    def __init__(self, _n=None, nolocal=False, config_file=None, gnaw="", gnawtype="go", **kwargs):
+    def __init__(self, _n=None, nolocal=False, config_file=None, gnaw="", gnawtype="go", name="", **kwargs):
         if kwargs:
             print(f"WARNING: kwargs {kwargs} are ignored")
         assert nolocal, "RemoteExecutor has no local worker, as scheduling is delegated"
         self.gnaw = gnaw
         self.gnawtype = gnawtype
+        self.name = name
         self.push_job, self.pull_job = trio.open_memory_channel(INFIN)
         self.push_result, self.resultq = trio.open_memory_channel(INFIN)
         self.jobn = 0
@@ -62,10 +63,11 @@ class RemoteExecutor:
                     }[self.gnawtype])
                 if self.gnaw.startswith("unix://"): os.unlink(self.gnaw[7:])
             self._n.start_soon(_run)
-            await trio.sleep(2) # wait for gnaw startup
+            await trio.sleep(0.5 if self.gnawtype=="go" else 3) # wait for gnaw startup
         with timeblock("all jobs"):
             async with SocketChannel(self.gnaw, dial=True, _n=self._n) as self._c, \
                        self.push_result:
+                await send_packet(self._c._so, dict(name=self.name)) # handshake
                 self._n.start_soon(self._sender)
                 async for x in self._c:
                     assert x['ok'] # gnaw handles all retries

@@ -187,9 +187,9 @@ class WTime(Resource): # walltime, not restorable
 
     def _encode_msgp(self):
         if self.deadline:
-            return dict(T=self.deadline-time.time(), countdown=True)
+            return dict(T=int(self.deadline-time.time()), countdown=True)
         else:
-            return dict(T=self.T, softT=self.softT, countdown=False)
+            return dict(T=int(self.T), softT=int(self.softT), countdown=False)
 
 
 class Token(Resource):
