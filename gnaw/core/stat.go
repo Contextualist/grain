@@ -44,7 +44,7 @@ func (s *Stat) Log() {
 	if lost := r.lostOrLateResponse - r.lateResponse; lost > 0 {
 		fmt.Fprintf(b, "lost_response: %d\t", lost)
 	}
-	if b.Len() > 0 {
+	if b.Len() > 6 {
 		log.Info().Msg(b.String())
 	}
 }

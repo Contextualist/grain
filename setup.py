@@ -41,6 +41,7 @@ setuptools.setup(
     tests_require = [
         "pytest",
         "pytest-trio",
+        "pytest-benchmark",
     ],
     entry_points = {
         "console_scripts": ["grain=grain.cli:main"],
