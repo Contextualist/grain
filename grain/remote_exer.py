@@ -2,9 +2,9 @@ import trio
 import dill as pickle
 
 from .conn_msgp import send_packet
-from .pair import SocketChannel
+from .pair import SocketChannel, notify
 from .util import timeblock, WaitGroup
-from .config import load_conf, override
+from .config import load_conf
 
 from math import inf as INFIN
 import secrets
@@ -30,9 +30,9 @@ class RemoteExecutor:
         assert _n is not None
         self._n = _n
         self._c = None
-        self._cs = trio.CancelScope()
+        self._cs = None
         self._wg = WaitGroup() # track the entire lifetime of each job
-        self.config_file = config_file
+        self.conf = load_conf(config_file)
 
     def submit(self, res, fn, *args, **kwargs):
         tid = self.jobn = self.jobn+1
@@ -43,7 +43,10 @@ class RemoteExecutor:
         await self._wg.wait() # no pending task => end of resubmission
         await self.push_job.aclose()
         await self._c.aclose()
-        self._cs.cancel()
+        if self._cs is not None: # subp gnaw cleanup
+            _head = getattr(self.conf.worker, "cli_dial", self.conf.worker.dial)
+            await notify(_head, dict(cmd="UNR", name='*'), seg=True)
+            self._cs.cancel()
     async def _sender(self):
         async with self.pull_job: # XXX: currently no ratelimit on sending
             async for tid, res, fargs in self.pull_job:
@@ -52,10 +55,9 @@ class RemoteExecutor:
     async def run(self):
         if self.gnaw == "": # pull up gnaw with unixconn
             self.gnaw = f"unix:///tmp/gnaw-{secrets.token_urlsafe()}" if self.gnawtype=="go" else "tcp://localhost:4224"
-            conf = load_conf(self.config_file)
-            override(conf, conf.head)
-            wurl = conf.listen
+            wurl = self.conf.head.listen
             async def _run():
+                self._cs = trio.CancelScope()
                 with self._cs:
                     await trio.run_process({
                         "py": [sys.executable, "-m", "grain.gnaw", "--hurl", self.gnaw, "--wurl", wurl, "-n", "1"],

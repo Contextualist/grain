@@ -18,9 +18,9 @@ async def _parallx(exer):
         await exer.resultq.receive()
 
 CONFIG = """
-[head]
-listen = "tcp://localhost:4239"
-log_file = "/dev/null"
+worker.dial = "tcp://localhost:4239"
+head.listen = "tcp://localhost:4239"
+head.log_file = "/dev/null"
 """
 async def test_exerworker(benchmark):
     async with trio.open_nursery() as _n, \
