@@ -20,23 +20,25 @@ def timeblock(text="this block", enter=False):
 
 
 import trio
-from trio.lowlevel import ParkingLot, checkpoint, enable_ki_protection
+from trio import lowlevel as _trio
 from outcome import Value
 
 class WaitGroup(object):
-
+    __slots__ = ("_counter", "_tasks")
     def __init__(self):
         self._counter = 0
-        self._lot = ParkingLot()
+        self._tasks = set()
 
     def add(self):
         self._counter += 1
 
-    @enable_ki_protection
+    @_trio.enable_ki_protection
     def done(self, *exc):
         self._counter -= 1
         if self._counter == 0:
-            self._lot.unpark_all()
+            for task in self._tasks:
+                _trio.reschedule(task)
+            self._tasks.clear()
         return False
 
     __enter__ = add
@@ -44,32 +46,45 @@ class WaitGroup(object):
 
     async def wait(self):
         if self._counter == 0:
-            await checkpoint()
+            await _trio.checkpoint()
         else:
-            await self._lot.park()
+            task = _trio.current_task()
+            self._tasks.add(task)
+            def abort_fn(_):
+                self._tasks.remove(task)
+                return _trio.Abort.SUCCEEDED
+            await _trio.wait_task_rescheduled(abort_fn)
 
 PENDING = object()
 
 class Future:
-    __slots__ = ("_v", "_lot")
+    __slots__ = ("_v", "_tasks")
     def __init__(self, v=PENDING):
         self._v = v
-        self._lot = ParkingLot()
+        self._tasks = set()
 
-    @enable_ki_protection
+    @_trio.enable_ki_protection
     def set(self, v):
+        assert self._v is PENDING
         self._v = v
-        self._lot.unpark_all()
+        for task in self._tasks:
+            _trio.reschedule(task)
+        self._tasks.clear()
 
     async def get(self):
         if self._v is not PENDING:
-            await checkpoint()
+            await _trio.checkpoint()
         else:
-            await self._lot.park()
+            task = _trio.current_task()
+            self._tasks.add(task)
+            def abort_fn(_):
+                self._tasks.remove(task)
+                return _trio.Abort.SUCCEEDED
+            await _trio.wait_task_rescheduled(abort_fn)
         return self._v
 
 
-@enable_ki_protection
+@_trio.enable_ki_protection
 def cutin_nowait(self, value):
     if self._closed:
         raise trio.ClosedResourceError
