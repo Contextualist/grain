@@ -34,8 +34,8 @@ async def iter_packet(s: trio.abc.ReceiveStream):
         _u.feed(data)
         for msg in _u:
             if type(msg) is not dict:
-                print("received malformed packet:", msg)
-                continue
+                print("received malformed packet:", data)
+                return
             yield decode_res(msg)
 
 async def recv_packet(s: trio.abc.ReceiveStream):

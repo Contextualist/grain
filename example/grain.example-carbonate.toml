@@ -8,7 +8,7 @@ python YOUR_ENTRYPOINT.py
 '''
 
 [head.script]
-queue = "''"
+queue = "general"
 walltime = "168:00:00"
 
 [worker]
@@ -17,7 +17,8 @@ dial = "tcp://h1.carbonate.uits.iu.edu:4242" # h1 or h2
 #dial = "bridge://x@x.x.x.x:x"
 
 [script]
-queue = "debug" # for normal queue, simply comment this out or use `queue = "''"`
+queue = "debug"
+#queue = "general"
 walltime = "1:00:00"
 cores = 24
 memory = 250

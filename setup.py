@@ -21,13 +21,13 @@ class _install(install):
 
 setuptools.setup(
     name="grain-scheduler",
-    version="0.14.0",
+    version="0.15.0",
     author="Harry Zhang",
     author_email="zhanghar@iu.edu",
     description="A scheduler for resource-aware parallel computing on clusters.",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.iu.edu/zhanghar/grain",
+    url="https://github.com/Contextualist/grain",
     packages=setuptools.find_packages(),
     python_requires=">=3.7",
     install_requires=[
