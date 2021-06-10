@@ -31,5 +31,6 @@ jobs:
         pip install .
         pip install -r test-requirements.txt
     - name: Test with pytest
+      working-directory: ./grain
       run: |
         pytest
