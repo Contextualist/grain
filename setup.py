@@ -1,27 +1,23 @@
 import setuptools
-from setuptools.command.install import install
+from distutils.command.build import build
+
+class _build(build):
+    def run(self):
+        from subprocess import run as cmd
+        cmd(
+            "go mod download; "
+            "CGO_ENABLED=0 GOOS=linux GOARCH=amd64 "
+                "go build -ldflags '-s -w' -trimpath -o ../grain/gnaw",
+            shell=True, check=True, cwd="gnaw/"
+        )
+        build.run(self)
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
 
-class _install(install):
-    def run(self):
-        install.run(self)
-        from sys import argv
-        from pathlib import Path
-        import site
-        psite = Path(site.getusersitepackages() if '--user' in argv else site.getsitepackages()[0])
-        pbin = psite.parents[2]/"bin/gnaw"
-        pgrain = psite/"grain/gnaw"
-        try:
-            pbin.unlink()
-        except:
-            pass
-        pbin.symlink_to(pgrain)
-
 setuptools.setup(
     name="grain-scheduler",
-    version="0.15.0",
+    version="0.15.1",
     author="Harry Zhang",
     author_email="zhanghar@iu.edu",
     description="A scheduler for resource-aware parallel computing on clusters.",
@@ -46,12 +42,12 @@ setuptools.setup(
     entry_points = {
         "console_scripts": ["grain=grain.cli:main"],
     },
-    package_data={
-        'grain': ['gnaw'],
-    },
     cmdclass={
-        'install': _install,
+        'build': _build,
     },
+    data_files=[
+        ('bin', ['grain/gnaw',]),
+    ],
     classifiers=[
         "Development Status :: 3 - Alpha",
         "Framework :: Trio",
