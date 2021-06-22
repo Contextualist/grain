@@ -3,13 +3,15 @@ from distutils.command.build import build
 
 class _build(build):
     def run(self):
+        from os import environ
         from subprocess import run as cmd
-        cmd(
-            "go mod download; "
-            "CGO_ENABLED=0 GOOS=linux GOARCH=amd64 "
-                "go build -ldflags '-s -w' -trimpath -o ../grain/gnaw",
-            shell=True, check=True, cwd="gnaw/"
-        )
+        if environ.get("CI", False):
+            cmd(
+                "go mod download; "
+                "CGO_ENABLED=0 GOOS=linux GOARCH=amd64 "
+                    "go build -ldflags '-s -w' -trimpath -o ../grain/gnaw",
+                shell=True, check=True, cwd="gnaw/"
+            )
         build.run(self)
 
 with open("README.md", "r") as fh:
