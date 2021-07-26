@@ -248,8 +248,7 @@ can start with one of the sample config and further customize it according to
 ``grain.reference.toml``. Here we will walk through some essensial settings to get
 started quickly.
 
-- ``system``: the HPC job management system (slurm or pbs, if pbs does not work, use
-  pbs_wrap).
+- ``system``: the HPC job management system (slurm or pbs)
 
 - ``head.listen``: the listening address of the head. You can start with a local port
   (e.g. ``tcp://:4242``).

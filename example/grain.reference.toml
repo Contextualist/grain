@@ -9,7 +9,7 @@
 # the worker job script generated.
 
 # HPC job management system.
-# Supported: slurm, pbs, pbs_wrap
+# Supported: slurm, pbs
 system = "slurm"
 
 # Context module loaded in head and worker's runtime.
@@ -78,7 +78,7 @@ Capacity = { V=8 }
 # overridden by `[head.script]` or `[worker.script]`.
 [script]
 
-shebang = "#!/bin/bash" # optional, CAVEAT: currently system `pbs_wrap` only support bash/zsh
+shebang = "#!/bin/bash" # optional
 queue = "general"
 walltime = "12:00:00" # optional
 cores = 48
@@ -90,11 +90,10 @@ extra_args = [] # optional
 # All the other lines are setup commands to be
 # executed before launching the worker process.
 setup_cleanup = '''
-module load /N/soft/cle7/modules/APPLICATIONS/gaussian/16
+source /etc/bash.bashrc.local
+module load gaussian/16
 
-export GAUSS_SCRDIR="/PATH/TO/GAUSCRDIR/$(hostname)"
+export GAUSS_SCRDIR="/tmp/gauscr"
 mkdir -p $GAUSS_SCRDIR
 defer rm -r $GAUSS_SCRDIR
-
-source ~/.zprofile
 '''

@@ -26,14 +26,14 @@ setup_cleanup = '''
 [custom_system]
 submit_cmd = "sbatch"
 directory = "#SBATCH"
-template = """{script.shebang}
-#SBATCH -J {name}
-#SBATCH -p {script.queue}
+template = """{c.script.shebang}
+#SBATCH -J {c.name}
+#SBATCH -p {c.script.queue}
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node={script.PPN}
-#SBATCH --time={script.walltime}
-#SBATCH -o {log_file}
-{script.extra_args_str}
+#SBATCH --ntasks-per-node={c.script.cores}
+#SBATCH --time={c.script.walltime}
+#SBATCH -o {c.log_file}
+{c.script.extra_args_str}
 
 {{MAIN}}
 """

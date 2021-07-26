@@ -17,7 +17,7 @@ from .resource import ZERO, Reject
 from .pair import SocketChannel, SocketChannelAcceptor
 from .subproc import subprocess_pool_daemon, BrokenSubprocessError
 from .stat import log_event, log_timestart, log_timeend, stat_logger, ls_worker_res, reg_probe, collect_probe
-from .config import load_conf, override
+from .config import load_conf
 
 FULL_HEALTH = 3
 STATSPAN = 15 # minutes
@@ -298,8 +298,7 @@ class GrainExecutor(object):
         self._n = _n
         self._wg = WaitGroup() # track the entire lifetime of each job
         self.reschedule = reschedule
-        conf = load_conf(config_file)
-        override(conf, conf.head)
+        conf = load_conf(config_file, mode='head')
         self.mgr = GrainManager(
             [GrainPseudoRemote(deepcopy(rpw if not nolocal else ZERO), conf.log_file, conf.contextmod)] + \
             [GrainRemote(a, deepcopy(rpw)) for a in waddrs],

@@ -5,5 +5,7 @@ sphinxcontrib-trio
 trio >= 0.15.0
 dill
 toml >= 0.10.1
+attrs
+cattrs
 click
 psutil

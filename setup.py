@@ -33,6 +33,8 @@ setuptools.setup(
         "dill >= 0.3.2",
         "msgpack",
         "toml >= 0.10.1",
+        "attrs",
+        "cattrs",
         "click",
         "psutil",
     ],

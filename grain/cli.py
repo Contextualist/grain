@@ -3,7 +3,7 @@ import trio
 import toml
 
 from .pair import SocketChannel, notify
-from .config import load_conf, override
+from .config import load_conf
 
 from datetime import datetime
 import subprocess
@@ -19,76 +19,54 @@ VAR = { # replace any occurance of `{{key}}` with `value()`. Evaluate at each su
     "HHMMSS": (lambda: datetime.now().strftime('%H%M%S')),
 }
 
-WORKER_MAIN = """echo "worker {name}'s node is $(hostname)"
+WORKER_MAIN = """echo "worker {c.name}'s node is $(hostname)"
 
-{script.setup}
+{c.script.setup}
 
 date
-python -m grain.worker --url {worker.dial} --res {script.res_str} --context {contextmod!r}
+python -m grain.worker --url {c.dial!r} --res {c.script.res_str} --context {c.contextmod!r}
 date
 
-{script.cleanup}
+{c.script.cleanup}
 """
 HEAD_MAIN = """echo "head's node is $(hostname)"
 
-{script.setup}
+{c.script.setup}
 
-{head.cmd}
+{c.cmd}
 
-{script.cleanup}
+{c.script.cleanup}
 """
 
-SLURM_TEMP = """{script.shebang}
-#SBATCH -J {name}
-#SBATCH -p {script.queue}
+SLURM_TEMP = """{c.script.shebang}
+#SBATCH -J {c.name}
+#SBATCH -p {c.script.queue}
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node={script.cores}
-#SBATCH --mem={script.memory}G
-#SBATCH --time={script.walltime}
-#SBATCH -o {log_file}
-{script.extra_args_str}
+#SBATCH --ntasks-per-node={c.script.cores}
+#SBATCH --mem={c.script.memory}G
+#SBATCH --time={c.script.walltime}
+#SBATCH -o {c.log_file}
+{c.script.extra_args_str}
 
 {{MAIN}}
 """
 
-# XXX: If this causes excessive use of vmem, use `PBSW_TEMP`
-PBS_TEMP = """{script.shebang}
-#PBS -N {name}
-#PBS -q {script.queue}
-#PBS -l nodes=1:ppn={script.cores},walltime={script.walltime}
-#PBS -l vmem={script.memory}gb
+PBS_TEMP = """{c.script.shebang}
+#PBS -N {c.name}
+#PBS -q {c.script.queue}
+#PBS -l nodes=1:ppn={c.script.cores},walltime={c.script.walltime}
+#PBS -l vmem={c.script.memory}gb
 #PBS -j oe
-#PBS -o {log_file}
-{script.extra_args_str}
+#PBS -o {c.log_file}
+{c.script.extra_args_str}
 
 cd $PBS_O_WORKDIR
 {{MAIN}}
 """
 
-# CAVEATE: all PBS_* variables are lost
-PBSW_TEMP = """{script.shebang}
-#PBS -N {name}
-#PBS -q {script.queue}
-#PBS -l nodes=1:ppn={script.cores},walltime={script.walltime}
-#PBS -l vmem={script.memory}gb
-#PBS -j oe
-#PBS -o {log_file}
-{script.extra_args_str}
-
-sshq=(ssh -q -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null)
-
-read -r -d '' WRAPPED << 'EOS'
-{{MAIN}}
-EOS
-
-"${{sshq[@]}}" localhost "cd $PBS_O_WORKDIR
-$WRAPPED"
-"""
-
 MGR_SYS = {
     "slurm":    ("sbatch", "#SBATCH", SLURM_TEMP),
     "pbs":      ("qsub",   "#PBS",    PBS_TEMP),
-    "pbs_wrap": ("qsub",   "#PBS",    PBSW_TEMP),
 }
 
 QUERY_TIMEOUT = 5
@@ -128,11 +106,13 @@ def submit(scmd, sc, *args, env=None):
 
 click.option = functools.partial(click.option, show_default=True)
 
-def global_options(fn):
+def global_options(fn=None, conf_mode=''):
+    if fn is None:
+        return functools.partial(global_options, conf_mode=conf_mode)
     @click.option('-c', '--config', default="grain.toml", envvar='GRAIN_CONFIG', help="Grain config file. Can be set by envar `GRAIN_CONFIG`")
     @functools.wraps(fn)
     def _wrapped(config, *args, **kwargs):
-        return fn(conf=load_conf(config), *args, **kwargs)
+        return fn(conf=load_conf(config, conf_mode), *args, **kwargs)
     return _wrapped
 
 def _toml_inline(**d):
@@ -141,18 +121,17 @@ def _toml_inline(**d):
     for k,v in d.items():
         d[k] = InlineDict(v)
     return toml.dumps(d, encoder=toml.TomlPreserveInlineDictEncoder())
-def gen_script(conf):
+def gen_script(conf, is_worker=False):
     scriptc = conf.script
-    if hasattr(scriptc, "PPN"):
-        scriptc.cores, scriptc.memory = scriptc.PPN, scriptc.MPN
     rmem = int(scriptc.memory/15*14)
     scriptc.walltime, rwalltime = norm_wtime(scriptc.walltime)
-    # json.dumps is for linebreak and quote escape
-    scriptc.res_str = json.dumps(_toml_inline( # only worker uses this
-        Node=dict(N=scriptc.cores, M=rmem),
-        WTime=dict(T=rwalltime, countdown=True),
-        **conf.worker.res,
-    ))
+    if is_worker:
+        # json.dumps is for linebreak and quote escape
+        scriptc.res_str = json.dumps(_toml_inline(
+            Node=dict(N=scriptc.cores, M=rmem),
+            WTime=dict(T=rwalltime, countdown=True),
+            **conf.res,
+        ))
     scriptc.setup, scriptc.cleanup = eval_defer(scriptc.setup_cleanup)
     if conf.custom_system:
         scmd, dirc, temp = conf.custom_system.submit_cmd, conf.custom_system.directory, conf.custom_system.template
@@ -171,14 +150,13 @@ def main():
 
 @main.command(help="Submit worker jobs (extra opts are forwarded to the submission command)",
               context_settings=dict(ignore_unknown_options=True, allow_extra_args=True))
-@global_options
+@global_options(conf_mode='worker')
 @click.option('-n', type=int, default=1, help="Number of worker jobs/nodes to submit")
 @click.option('--dry', is_flag=True, help="Dry run. Print out the job submission script without submitting. This ignores `-n`.")
 @click.pass_context
 def up(ctx, conf, n, dry):
-    override(conf, conf.worker)
-    scmd, temp = gen_script(conf)
-    sc = temp.replace("{{MAIN}}", WORKER_MAIN).format(**conf)
+    scmd, temp = gen_script(conf, is_worker=True)
+    sc = temp.replace("{{MAIN}}", WORKER_MAIN).format(c=conf)
     if dry:
         print(eval_var(sc))
         return
@@ -187,14 +165,13 @@ def up(ctx, conf, n, dry):
         submit(scmd, eval_var(sc), *ctx.args)
 
 @main.command(help="Start the head process")
-@global_options
+@global_options(conf_mode='head')
 @click.option('--local', is_flag=True, help="Run locally instead of submitting a job")
 @click.option('--dry', is_flag=True, help="Dry run. Print out the job submission script without submitting")
 def start(conf, local, dry):
-    override(conf, conf.head)
     scmd, temp = gen_script(conf)
-    conf.log_file = conf.head.main_log_file # We want to record Grain's log
-    sc = temp.replace("{{MAIN}}", HEAD_MAIN).format(**conf)
+    conf.log_file = conf.main_log_file # We want to record Grain's log
+    sc = temp.replace("{{MAIN}}", HEAD_MAIN).format(c=conf)
     if dry:
         print(eval_var(sc))
         return
@@ -204,7 +181,7 @@ def start(conf, local, dry):
         submit(scmd, eval_var(sc))
 
 @main.command(help="Overview of workers' status")
-@global_options
+@global_options(conf_mode='worker')
 def ls(conf):
     async def _ls(head):
         with _handle_connection_error(head):
@@ -212,17 +189,17 @@ def ls(conf):
                        SocketChannel(f"{head}", dial=True, _n=_n) as c:
                 await c.send(dict(cmd="STA"))
                 print((await c.receive())['result'].decode())
-    trio.run(_ls, getattr(conf.worker, "cli_dial", conf.worker.dial))
+    trio.run(_ls, conf.cli_dial)
 
 @main.command(help="Quit workers, by name / glob pattern")
-@global_options
+@global_options(conf_mode='worker')
 @click.option('-f', '--force', is_flag=True, help="Kill the worker(s) even if it still have running jobs")
 @click.argument('worker_name_pattern')
 def quit(conf, force, worker_name_pattern):
     async def _unreg(head, name):
         with _handle_connection_error(head):
             await notify(f"{head}", dict(cmd="UNR" if force else "TRM", name=name), seg=True)
-    trio.run(_unreg, getattr(conf.worker, "cli_dial", conf.worker.dial), worker_name_pattern)
+    trio.run(_unreg, conf.cli_dial, worker_name_pattern)
 
 @contextmanager
 def _handle_connection_error(url):

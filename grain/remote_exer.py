@@ -32,7 +32,10 @@ class RemoteExecutor:
         self._c = None
         self._cs = None
         self._wg = WaitGroup() # track the entire lifetime of each job
-        self.conf = load_conf(config_file)
+        if gnaw == '':
+            conf = load_conf(config_file, mode='')
+            self.listen = conf.head.listen
+            self.cli_dial = conf.worker.cli_dial
 
     def submit(self, res, fn, *args, **kwargs):
         tid = self.jobn = self.jobn+1
@@ -44,8 +47,7 @@ class RemoteExecutor:
         await self.push_job.aclose()
         await self._c.aclose()
         if self._cs is not None: # subp gnaw cleanup
-            _head = getattr(self.conf.worker, "cli_dial", self.conf.worker.dial)
-            await notify(_head, dict(cmd="UNR", name='*'), seg=True)
+            await notify(self.cli_dial, dict(cmd="UNR", name='*'), seg=True)
             self._cs.cancel()
     async def _sender(self):
         async with self.pull_job: # XXX: currently no ratelimit on sending
@@ -55,7 +57,7 @@ class RemoteExecutor:
     async def run(self):
         if self.gnaw == "": # pull up gnaw with unixconn
             self.gnaw = f"unix:///tmp/gnaw-{secrets.token_urlsafe()}" if self.gnawtype=="go" else "tcp://localhost:4224"
-            wurl = self.conf.head.listen
+            wurl = self.listen
             async def _run():
                 self._cs = trio.CancelScope()
                 with self._cs:
