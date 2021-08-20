@@ -25,8 +25,8 @@ var (
 	maxdocks = flag.Uint("n", 3, "Maximum numbers of RemoteExers allowed to connect")
 	verbose  = flag.Bool("verbose", false, "Print out debug level log")
 
-	MAX_DOCKS  = *maxdocks
-	docksAvail = make(chan uint, *maxdocks)
+	MAX_DOCKS  uint
+	docksAvail chan uint
 )
 
 func dockLoop(conn net.Conn, exer *core.GrainExecutor, dockID uint, chRet <-chan core.ResultMsg, dockClose func()) {
@@ -142,6 +142,8 @@ func run() {
 
 func main() {
 	flag.Parse()
+	MAX_DOCKS = *maxdocks
+	docksAvail = make(chan uint, *maxdocks)
 	if *verbose {
 		zerolog.SetGlobalLevel(zerolog.DebugLevel)
 	} else {
