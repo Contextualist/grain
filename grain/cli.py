@@ -4,6 +4,7 @@ import toml
 
 from .pair import SocketChannel, notify
 from .config import load_conf
+from ._version import __version__
 
 from datetime import datetime
 import subprocess
@@ -145,6 +146,7 @@ def gen_script(conf, is_worker=False):
     return scmd, temp
 
 @click.group(help="CLI tool to manage Grain workers")
+@click.version_option(__version__)
 def main():
     pass
 

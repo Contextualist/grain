@@ -1,15 +1,17 @@
 import setuptools
 from distutils.command.build import build
 
+exec(open("grain/_version.py").read())
+
 class _build(build):
     def run(self):
         from os import environ
         from subprocess import run as cmd
-        if environ.get("CI", False):
+        if not environ.get("CI", False):
             cmd(
                 "go mod download; "
                 "CGO_ENABLED=0 GOOS=linux GOARCH=amd64 "
-                    "go build -ldflags '-s -w' -trimpath -o ../grain/gnaw",
+                    f"go build -ldflags '-s -w -X main.VERSION={__version__}' -trimpath -o ../grain/gnaw",
                 shell=True, check=True, cwd="gnaw/"
             )
         build.run(self)
@@ -19,7 +21,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="grain-scheduler",
-    version="0.15.1",
+    version=__version__,
     author="Harry Zhang",
     author_email="zhanghar@iu.edu",
     description="A scheduler for resource-aware parallel computing on clusters.",

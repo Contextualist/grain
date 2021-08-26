@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -24,7 +25,9 @@ var (
 	wurl     = flag.String("wurl", "", "URL for Workers to connect")
 	maxdocks = flag.Uint("n", 3, "Maximum numbers of RemoteExers allowed to connect")
 	verbose  = flag.Bool("verbose", false, "Print out debug level log")
+	printVer = flag.Bool("version", false, "Print version and exit")
 
+	VERSION    string // build-time injected
 	MAX_DOCKS  uint
 	docksAvail chan uint
 )
@@ -66,6 +69,8 @@ func dockLoop(conn net.Conn, exer *core.GrainExecutor, dockID uint, chRet <-chan
 	} else {
 		submit = exer.Submit
 	}
+	log.Info().Uint("dockID", dockID).Str("name", *hsmsg.Name).Msg("RemoteExer connected")
+
 	for {
 		var msg core.FnMsg
 		err := msg.DecodeMsg(rcv)
@@ -123,7 +128,6 @@ func run() {
 			_ = conn.Close()
 			continue
 		}
-		log.Info().Uint("dockID", dc).Msg("RemoteExer connected")
 		chDock := make(chan core.ResultMsg)
 		mu.Lock()
 		chDocks[dc] = chDock
@@ -142,6 +146,10 @@ func run() {
 
 func main() {
 	flag.Parse()
+	if *printVer {
+		fmt.Println(VERSION)
+		return
+	}
 	MAX_DOCKS = *maxdocks
 	docksAvail = make(chan uint, *maxdocks)
 	if *verbose {
