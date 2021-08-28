@@ -1,20 +1,28 @@
 import setuptools
 from distutils.command.build import build
+from os import environ
 
 exec(open("grain/_version.py").read())
 
 class _build(build):
     def run(self):
-        from os import environ
         from subprocess import run as cmd
-        if not environ.get("CI", False):
-            cmd(
-                "go mod download; "
-                "CGO_ENABLED=0 GOOS=linux GOARCH=amd64 "
-                    f"go build -ldflags '-s -w -X main.VERSION={__version__}' -trimpath -o ../grain/gnaw",
-                shell=True, check=True, cwd="gnaw/"
-            )
+        cmd(
+            "go mod download; "
+            "CGO_ENABLED=0 GOOS=linux GOARCH=amd64 "
+                f"go build -ldflags '-s -w -X main.VERSION={__version__}' -trimpath -o ../grain/gnaw",
+            shell=True, check=True, cwd="gnaw/"
+        )
         build.run(self)
+
+gnaw_build_args = dict(
+    cmdclass={
+        'build': _build,
+    },
+    data_files=[
+        ('bin', ['grain/gnaw',]),
+    ],
+) if not environ.get("CI", False) else {}
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
@@ -40,20 +48,15 @@ setuptools.setup(
         "click",
         "psutil",
     ],
-    tests_require = [
+    tests_require=[
         "pytest",
         "pytest-trio",
         "pytest-benchmark",
     ],
-    entry_points = {
+    entry_points={
         "console_scripts": ["grain=grain.cli:main"],
     },
-    cmdclass={
-        'build': _build,
-    },
-    data_files=[
-        ('bin', ['grain/gnaw',]),
-    ],
+    **gnaw_build_args,
     classifiers=[
         "Development Status :: 3 - Alpha",
         "Framework :: Trio",
