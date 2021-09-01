@@ -51,5 +51,5 @@ async def test_remoteexer(benchmark, gt):
 async def _worker(cs):
     with cs:
         await trio.run_process([sys.executable, "-m", "grain.worker", "--url", "tcp://localhost:4239",
-                                "--res", "Memory = { M = 54 }\n"])
+                                "--res", '{"Memory": { "M": 54 }}'])
         print("worker quit")

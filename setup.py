@@ -42,7 +42,7 @@ setuptools.setup(
         "trio >= 0.15.0",
         "dill >= 0.3.2",
         "msgpack",
-        "toml >= 0.10.1",
+        "tomli",
         "attrs",
         "cattrs",
         "click",

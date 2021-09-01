@@ -1,12 +1,12 @@
 import trio
 import dill as pickle
-import toml
 
 from functools import partial
 import traceback
 import argparse
 import time
 from io import StringIO
+import json
 import logging
 logger = logging.getLogger(__name__)
 
@@ -90,7 +90,7 @@ async def __loop():
             url = await grain_worker(RES, url)
 
 def parse_res(res_str):
-    res_dict = toml.load(StringIO(res_str.replace('\\n', '\n')))
+    res_dict = json.loads(res_str.replace('\\n', '\n'))
     RES = resource.ZERO
     for rn, rargs in res_dict.items():
         RES &= getattr(resource, rn)(**rargs)
@@ -105,8 +105,8 @@ class WorkerCancelled(BaseException):
 if __name__ == "__main__":
     argp = argparse.ArgumentParser(description="Worker instance for Grain")
     argp.add_argument('--url', default="", help="URL to connect to Grain's head instance")
-    argp.add_argument('--res', '-r', default="None", help=r'the resource owned by the worker, in TOML '
-                                                          r'(e.g. "Node = { N=16, M=32 }\nWTime = { T=\"1:00:00\", countdown=true }")')
+    argp.add_argument('--res', '-r', default="None", help='the resource owned by the worker, in JSON '
+                                                          '(e.g. \'{"Node": { "N": 16, "M": 32 }, "WTime": { "T": "1:00:00", "countdown": true }}\')')
     argp.add_argument('--context', default="", help="context module file")
     carg = argp.parse_args()
 

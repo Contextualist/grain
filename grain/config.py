@@ -1,4 +1,4 @@
-import toml
+import tomli
 import attr
 attrs = attr.s(auto_attribs=True)
 import cattr
@@ -7,6 +7,7 @@ from typing import Optional, List, Dict, Any, Literal
 from os import environ as ENV
 from collections import ChainMap
 from io import StringIO
+from pathlib import Path
 import logging
 logger = logging.getLogger(__name__)
 
@@ -78,7 +79,8 @@ def load_conf(config=None, mode: Literal['', 'head', 'worker']=''):
     else:
         config = config or ENV.get("GRAIN_CONFIG", "grain.toml")
         try:
-            conf = toml.load(config)
+            config_s = Path(config).read_bytes().decode() if type(config) is str else config.read()
+            conf = tomli.loads(config_s)
         except FileNotFoundError:
             logger.error(f"Cannot find Grain config file {config!r}")
             exit(1)

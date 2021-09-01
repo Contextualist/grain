@@ -1,6 +1,5 @@
 import click
 import trio
-import toml
 
 from .pair import SocketChannel, notify
 from .config import load_conf
@@ -25,7 +24,7 @@ WORKER_MAIN = """echo "worker {c.name}'s node is $(hostname)"
 {c.script.setup}
 
 date
-python -m grain.worker --url {c.dial!r} --res {c.script.res_str} --context {c.contextmod!r}
+python -m grain.worker --url {c.dial!r} --res {c.script.res_str!r} --context {c.contextmod!r}
 date
 
 {c.script.cleanup}
@@ -116,19 +115,12 @@ def global_options(fn=None, conf_mode=''):
         return fn(conf=load_conf(config, conf_mode), *args, **kwargs)
     return _wrapped
 
-def _toml_inline(**d):
-    class InlineDict(dict, toml.decoder.InlineTableDict):
-        pass
-    for k,v in d.items():
-        d[k] = InlineDict(v)
-    return toml.dumps(d, encoder=toml.TomlPreserveInlineDictEncoder())
 def gen_script(conf, is_worker=False):
     scriptc = conf.script
     rmem = int(scriptc.memory/15*14)
     scriptc.walltime, rwalltime = norm_wtime(scriptc.walltime)
     if is_worker:
-        # json.dumps is for linebreak and quote escape
-        scriptc.res_str = json.dumps(_toml_inline(
+        scriptc.res_str = json.dumps(dict(
             Node=dict(N=scriptc.cores, M=rmem),
             WTime=dict(T=rwalltime, countdown=True),
             **conf.res,
