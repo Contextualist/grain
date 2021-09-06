@@ -1,3 +1,3 @@
-module github.iu.edu/IyengarLab/grain/bridge
+module github.com/Contextualist/grain/bridge
 
-go 1.16
+go 1.17

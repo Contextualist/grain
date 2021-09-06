@@ -58,7 +58,7 @@ setuptools.setup(
     },
     **gnaw_build_args,
     classifiers=[
-        "Development Status :: 3 - Alpha",
+        "Development Status :: 4 - Beta",
         "Framework :: Trio",
         "Intended Audience :: Science/Research",
         "License :: OSI Approved :: MIT License",
