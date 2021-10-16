@@ -3,8 +3,9 @@ sphinx_rtd_theme
 sphinxcontrib-trio
 
 trio >= 0.15.0
-dill
-toml >= 0.10.1
+dill >= 0.3.2
+msgpack
+tomli
 attrs
 cattrs
 click
