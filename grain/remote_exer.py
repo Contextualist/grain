@@ -1,9 +1,8 @@
 import trio
-import dill as pickle
 
 from .conn_msgp import send_packet
 from .pair import SocketChannel, notify
-from .util import timeblock, WaitGroup
+from .util import timeblock, pickle_dumps, pickle_loads, WaitGroup
 from .config import load_conf
 
 from math import inf as INFIN
@@ -11,9 +10,6 @@ import secrets
 import sys
 import os
 from functools import partial
-
-pickle_dumps = partial(pickle.dumps, protocol=4)
-pickle_loads = pickle.loads
 
 class RemoteExecutor:
     """Pass the jobs on to an external scheduler"""

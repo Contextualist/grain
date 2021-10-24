@@ -1,7 +1,5 @@
 import trio
-import dill as pickle
 
-from functools import partial
 import traceback
 import argparse
 import time
@@ -13,10 +11,7 @@ logger = logging.getLogger(__name__)
 from .contextvar import GVAR
 from . import resource
 from .pair import notify, SocketChannel
-from .util import load_contextmod, nullacontext
-
-pickle_dumps = partial(pickle.dumps, protocol=4)
-pickle_loads = pickle.loads
+from .util import pickle_dumps, pickle_loads, load_contextmod, nullacontext
 
 async def exerf(tid, res, func, so):
     GVAR.res = res

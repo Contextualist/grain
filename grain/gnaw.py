@@ -2,19 +2,14 @@
 GrainExecutor. For a better performance, use the Go implementation instead.
 """
 import trio
-import dill as pickle
 
 import argparse
 from io import StringIO
-from functools import partial
 
 from .head import GrainExecutor
 from .pair import SocketChannelAcceptor
-from .util import set_numpy_oneline_repr
+from .util import set_numpy_oneline_repr, pickle_dumps, pickle_loads
 set_numpy_oneline_repr()
-
-pickle_dumps = partial(pickle.dumps, protocol=4)
-pickle_loads = pickle.loads
 
 CONFIG = """
 [head]

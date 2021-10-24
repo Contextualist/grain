@@ -1,6 +1,8 @@
+import dill as pickle
+
 from contextlib import ContextDecorator, asynccontextmanager
 from timeit import default_timer as timer
-from functools import wraps
+from functools import wraps, partial
 import types
 import importlib.util
 from pathlib import Path
@@ -17,6 +19,10 @@ def timeblock(text="this block", enter=False):
             print(f"Time elapsed for {text}{' (incomplete)' if any(exc) else ''}: {timer()-self.st}")
             return False
     return TimeblockCtx()
+
+
+pickle_dumps = partial(pickle.dumps, protocol=5)
+pickle_loads = pickle.loads
 
 
 import trio

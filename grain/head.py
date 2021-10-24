@@ -1,5 +1,4 @@
 import trio
-import dill as pickle
 
 from copy import deepcopy
 from math import inf as INFIN
@@ -12,7 +11,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 from .contextvar import GVAR
-from .util import timeblock, WaitGroup, nullacontext, optional_cm, make_prependable, load_contextmod
+from .util import timeblock, pickle_dumps, pickle_loads, WaitGroup, nullacontext, optional_cm, make_prependable, load_contextmod
 from .resource import ZERO, Reject
 from .pair import SocketChannel, SocketChannelAcceptor
 from .subproc import subprocess_pool_daemon, BrokenSubprocessError
@@ -23,10 +22,7 @@ FULL_HEALTH = 3
 STATSPAN = 15 # minutes
 HEARTBEAT_INTERVAL, HEARTBEAT_TOLERANCE = 10, 3 # 10s * 3
 
-pickle_dumps = partial(pickle.dumps, protocol=4)
-pickle_loads = pickle.loads
-
-class GrainRemote(object):
+class GrainRemote:
     def __init__(self, addr, res):
         self._c = None
         self.res = res
@@ -273,7 +269,7 @@ class GrainManager:
         return False
 
 
-class GrainExecutor(object):
+class GrainExecutor:
     """There are two ways to use GrainExecutor: sync and async:
     sync: TODO
     async: TODO
