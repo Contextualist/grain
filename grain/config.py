@@ -35,12 +35,20 @@ class Config:
     custom_system: Optional[CustomSystem] = None
 
 @attrs
+class Gnaw:
+    enabled:   bool = True
+    log_file:  str = ""
+    max_conn:  int = 8
+    idle_quit: str = "30m"
+
+@attrs
 class Head(Config):
     name:          str = "grain_head"
     main_log_file: str = "/dev/null"
     log_file:      str = ""
     listen:        str = "tcp://:4242"
     cmd:           str = ""
+    gnaw:          Gnaw = attr.Factory(Gnaw)
 
 @attrs
 class Worker(Config):
@@ -62,7 +70,8 @@ class GenericConfig:
 
 _loose_filler = dict(
     system="",
-    head={},
+    head=dict(gnaw=dict(enabled=False)), # disable gnaw for test purpose
+    worker=dict(dial=""),
     script=dict(cores=0, memory=0, setup_cleanup=""),
 )
 

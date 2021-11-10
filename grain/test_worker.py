@@ -1,5 +1,6 @@
 from .worker import *
 from .head import GrainExecutor
+from .config import load_conf
 from .resource import Memory, WTime
 from .contextvar import GVAR
 
@@ -8,7 +9,7 @@ import trio
 
 from functools import partial
 
-GrainExecutor = partial(GrainExecutor, config_file=False)
+GrainExecutor = partial(GrainExecutor, config=load_conf(False, 'head'))
 
 async def addone(x):
     return x+1

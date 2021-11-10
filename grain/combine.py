@@ -1,9 +1,7 @@
-from .head import GrainExecutor
 from .resource import ZERO
 
 from math import inf as INFIN
 from contextlib import contextmanager
-from collections.abc import Iterable
 from functools import partial
 from inspect import signature
 
@@ -142,9 +140,15 @@ async def relay(inq):
                     # cancelling receive channel's task.
                     # Suppress this so that the real error can surface.
                     break
+
 async def boot_combine(subtasks, args, kwargs):
+    from .head import GrainExecutor
+    from .combine import relay, CombineGroup_ctxt # no global dependency
+    from .config import load_conf
+    from collections.abc import Iterable
+    config = load_conf(kwargs.pop('config_file', None), 'head')
     async with trio.open_nursery() as _n, \
-               GrainExecutor(_n=_n, *args, **kwargs) as exer, \
+               GrainExecutor(_n=_n, config=config, *args, **kwargs) as exer, \
                exer.push_result.clone() as push_newgroup:
         _n.start_soon(relay, exer.resultq)
         global _gn # for all subtasks

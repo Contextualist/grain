@@ -7,6 +7,7 @@ import argparse
 from io import StringIO
 
 from .head import GrainExecutor
+from .config import load_conf
 from .pair import SocketChannelAcceptor
 from .util import set_numpy_oneline_repr, pickle_dumps, pickle_loads
 set_numpy_oneline_repr()
@@ -57,7 +58,7 @@ async def main():
     # buffered for network latency to dock
     chdocks_s, chdocks_r = zip(*[trio.open_memory_channel(300) for _ in range(MAXDOCKS)])
     async with trio.open_nursery() as _n, \
-               GrainExecutor(_n=_n, nolocal=True, config_file=StringIO(CONFIG), temporary_err=(trio.TooSlowError,)) as exer, \
+               GrainExecutor(_n=_n, nolocal=True, config=CONFIG, temporary_err=(trio.TooSlowError,)) as exer, \
                SocketChannelAcceptor(_n=_n, url=carg.hurl) as soa:
         _n.start_soon(relay, exer.resultq, chdocks_s)
         async for _c in soa:
@@ -78,7 +79,7 @@ if __name__ == "__main__":
     argp.add_argument('--wurl', help="URL for Workers to connect")
     argp.add_argument('-n', '--maxdocks', type=int, default=3, help="Maximum numbers of RemoteExers allowed to connect")
     carg = argp.parse_args()
-    CONFIG = CONFIG.format(wurl=carg.wurl)
+    CONFIG = load_conf(StringIO(CONFIG.format(wurl=carg.wurl)), 'head')
     MAXDOCKS = carg.maxdocks
     docks_avail = set(range(MAXDOCKS))
     docks_inuse = set()

@@ -1,5 +1,6 @@
 from .head import *
 from .resource import Memory, ZERO
+from .config import load_conf
 
 import pytest
 import trio
@@ -9,7 +10,7 @@ from functools import partial
 from io import StringIO
 
 sprint = partial(trio.run, clock=MockClock(rate=1000))
-GrainExecutor = partial(GrainExecutor, config_file=False)
+GrainExecutor = partial(GrainExecutor, config=load_conf(False, 'head'))
 
 async def rev(n, i):
     await trio.sleep(n-i)
@@ -58,9 +59,9 @@ def test_local_redirectouterr(capsys):
     captured = capsys.readouterr()
     assert "something\n" in captured.out
 
-    with GrainExecutor(config_file=StringIO('''[head]
-listen = "tcp://:4243"
-log_file = "/dev/null"''')) as exer:
+    with GrainExecutor(config=load_conf(
+        StringIO('[head]\nlisten = "tcp://:4243"\nlog_file = "/dev/null"'), 'head'
+    )) as exer:
         exer.submit(ZERO, say_something)
     captured = capsys.readouterr()
     assert "something\n" not in captured.out

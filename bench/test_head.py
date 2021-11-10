@@ -1,4 +1,5 @@
 from grain.head import GrainExecutor
+from grain.config import load_conf
 from grain.resource import Memory, ZERO
 import trio
 
@@ -16,5 +17,5 @@ async def _parallx(exer):
 
 async def test_head(benchmark):
     async with trio.open_nursery() as _n, \
-               GrainExecutor(_n=_n, rpw=Memory(0), config_file=False) as exer:
+               GrainExecutor(_n=_n, rpw=Memory(0), config=load_conf(False,'head')) as exer:
         await (asyncify(benchmark))(_parallx, exer)

@@ -16,7 +16,6 @@ from .resource import ZERO, Reject
 from .pair import SocketChannel, SocketChannelAcceptor
 from .subproc import subprocess_pool_daemon, BrokenSubprocessError
 from .stat import log_event, log_timestart, log_timeend, stat_logger, ls_worker_res, reg_probe, collect_probe
-from .config import load_conf
 
 FULL_HEALTH = 3
 STATSPAN = 15 # minutes
@@ -283,7 +282,7 @@ class GrainExecutor:
         temporary_err=(), # exceptions that's not critical to shutdown a worker
         reschedule=True,  # if False, abort on any exception
         persistent=True,  # if False, abort on any worker's exit
-        config_file=None, # TOML grain config file name (Can be set by envar `GRAIN_CONFIG`)
+        config=None,      # grain's head config
         stat_tag=lambda res: str(getattr(res,'T',"")), # define how timestat is categorized by resource
      ):
         self.push_job, self.pull_job = trio.open_memory_channel(INFIN)
@@ -294,11 +293,10 @@ class GrainExecutor:
         self._n = _n
         self._wg = WaitGroup() # track the entire lifetime of each job
         self.reschedule = reschedule
-        conf = load_conf(config_file, mode='head')
         self.mgr = GrainManager(
-            [GrainPseudoRemote(deepcopy(rpw if not nolocal else ZERO), conf.log_file, conf.contextmod)] + \
+            [GrainPseudoRemote(deepcopy(rpw if not nolocal else ZERO), config.log_file, config.contextmod)] + \
             [GrainRemote(a, deepcopy(rpw)) for a in waddrs],
-            self._n, temporary_err, persistent, conf.listen)
+            self._n, temporary_err, persistent, config.listen)
         reg_probe("queued jobs", lambda: len(self.push_job._state.data))
         self.stat_tag = stat_tag
 

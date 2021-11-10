@@ -280,12 +280,14 @@ async def boot(subtasks, args, kwargs):
     global exer, _gn, rch
     from .head import GrainExecutor
     from .remote_exer import RemoteExecutor
-    Exer = RemoteExecutor if 'gnaw' in kwargs else GrainExecutor
+    from .config import load_conf
     from .delayed import relay # no global dependency
     from .util import open_ordered_nursery
     from collections.abc import Iterable
+    config = load_conf(kwargs.pop('config_file', None), 'head')
+    Exer = RemoteExecutor if config.gnaw.enabled or 'gnaw' in kwargs else GrainExecutor
     async with trio.open_nursery() as _n, \
-               Exer(_n=_n, *args, **kwargs) as exer:
+               Exer(_n=_n, config=config, *args, **kwargs) as exer:
         rch = {}
         _n.start_soon(relay, exer.resultq)
         GVAR.instance = "N/A"
@@ -325,7 +327,6 @@ def run(subtasks, *args, **kwargs):
         is categorized by resource. Jobs with resource that maps to the same
         str are grouped together.
       gnaw (Optional[str]): If set, connect to the Gnaw executor with address
-        ``gnaw`` instead of using the built-in executor. If an empty str is
-        given, a Gnaw executor is started as a subprocess.
+        ``gnaw``, ignoring ``head.gnaw`` in the config.
     """
     trio.run(boot, subtasks, args, kwargs)

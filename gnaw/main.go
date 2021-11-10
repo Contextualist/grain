@@ -21,15 +21,18 @@ import (
 const DOCK_COOLDOWN = 3 * time.Minute
 
 var (
-	hurl     = flag.String("hurl", "", "URL for RemoteExers to connect")
-	wurl     = flag.String("wurl", "", "URL for Workers to connect")
-	maxdocks = flag.Uint("n", 3, "Maximum numbers of RemoteExers allowed to connect")
-	verbose  = flag.Bool("verbose", false, "Print out debug level log")
-	printVer = flag.Bool("version", false, "Print version and exit")
+	hurl        = flag.String("hurl", "", "URL for RemoteExers to connect")
+	wurl        = flag.String("wurl", "", "URL for Workers to connect")
+	maxdocks    = flag.Uint("n", 3, "Maximum numbers of RemoteExers allowed to connect")
+	idleTimeout = flag.Duration("t", 8760*time.Hour, "Time to exit after the last RemoteExer quit")
+	logfile     = flag.String("log", "", "logfile location; leave blank for logging to stderr")
+	verbose     = flag.Bool("verbose", false, "Print out debug level log")
+	printVer    = flag.Bool("version", false, "Print version and exit")
 
 	VERSION    string // build-time injected
 	MAX_DOCKS  uint
 	docksAvail chan uint
+	idleTimer  = time.NewTimer(8760 * time.Hour)
 )
 
 func dockLoop(conn net.Conn, exer *core.GrainExecutor, dockID uint, chRet <-chan core.ResultMsg, dockClose func()) {
@@ -39,7 +42,10 @@ func dockLoop(conn net.Conn, exer *core.GrainExecutor, dockID uint, chRet <-chan
 		log.Info().Uint("dockID", dockID).Msg("RemoteExer quits")
 		time.Sleep(DOCK_COOLDOWN)
 		docksAvail <- dockID
-		log.Info().Uint("dockID", dockID).Msg("Dock is now available")
+		log.Debug().Uint("dockID", dockID).Msg("Dock is now available")
+		if len(docksAvail) == int(MAX_DOCKS) {
+			idleTimer.Reset(*idleTimeout) // the timer is guarentee to be stopped before
+		}
 	}()
 
 	go func() { // send results back
@@ -88,6 +94,7 @@ func dockLoop(conn net.Conn, exer *core.GrainExecutor, dockID uint, chRet <-chan
 func run() {
 	exer := core.NewGrainExecutor(*wurl)
 	go exer.Run()
+	go idleQuit(exer)
 
 	var mu sync.RWMutex
 	chDocks := make(map[uint]chan<- core.ResultMsg)
@@ -128,6 +135,7 @@ func run() {
 			_ = conn.Close()
 			continue
 		}
+		idleTimer.Stop()
 		chDock := make(chan core.ResultMsg)
 		mu.Lock()
 		chDocks[dc] = chDock
@@ -144,20 +152,37 @@ func run() {
 	}
 }
 
+func idleQuit(exer *core.GrainExecutor) {
+	<-idleTimer.C
+	exer.QuitAllWorkers() // this is async, so give 5s grace period
+	time.Sleep(5 * time.Second)
+	os.Exit(0)
+}
+
 func main() {
 	flag.Parse()
 	if *printVer {
 		fmt.Println(VERSION)
 		return
 	}
-	MAX_DOCKS = *maxdocks
-	docksAvail = make(chan uint, *maxdocks)
 	if *verbose {
 		zerolog.SetGlobalLevel(zerolog.DebugLevel)
 	} else {
 		zerolog.SetGlobalLevel(zerolog.InfoLevel)
 	}
-	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})
+	logwriter, noColor := os.Stderr, false
+	if *logfile != "" {
+		var err error
+		logwriter, err = os.Create(*logfile)
+		if err != nil {
+			panic(err)
+		}
+		noColor = true
+	}
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: logwriter, NoColor: noColor, TimeFormat: time.RFC3339})
+
+	MAX_DOCKS = *maxdocks
+	docksAvail = make(chan uint, MAX_DOCKS)
 	for i := uint(0); i < MAX_DOCKS; i++ {
 		docksAvail <- i
 	}

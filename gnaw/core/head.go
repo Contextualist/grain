@@ -527,3 +527,7 @@ func (ge *GrainExecutor) Run() {
 		ge.mgr.schedule(t)
 	}
 }
+
+func (ge *GrainExecutor) QuitAllWorkers() {
+	ge.mgr.unregister("*")
+}
