@@ -27,8 +27,28 @@ async def each(*dos):
         dos = list(dos[0])
     return [await do for do in dos]
 
+def delayedval(v, length=None, copy_on_setitem=True):
+    """A convinient helper function that wraps any value into a
+    delayed object that immediately return that value at evaluation.
+    This is useful for types with operator overloading. e.g.::
 
-def delayed(fn=None, nout=None, copy_on_setitem=True):
+        import numpy as np
+        r_ = afn() # `afn` is a delayed function returning an array
+        #np.array([0]) + r_ # unexpected behavior / exception
+        delayedval(np.array([0])) + r_ # ok
+
+    Args:
+      v (Any): value to be wrapped
+      length (int): see ``nout`` of :func:`delayed`
+      copy_on_setitem (bool): see ``copy_on_setitem`` of :func:`delayed`
+
+    Returns:
+      a :class:`Delayed` object evaluted to ``v``
+    """
+    return Delayed(Future(v), length=length, copy_on_setitem=copy_on_setitem)
+
+
+def delayed(fn=None, nout=None, copy_on_setitem=True, cache_hfn=None):
     """Wraps an async function into a delayed function (:class:`DelayedFn`).
     It can be used as a decorator, or around the function directly (i.e.
     ``fn = delayed(fn)``).
@@ -99,7 +119,8 @@ class Delayed:
     """A Delayed object represents a value to be computed by Grain.
 
     Do not construct this directly, this is intended to be the return
-    value of a :class:`DelayedFn`.
+    value of a :class:`DelayedFn`. Alternatively, use :func:`delayedval`
+    for wrapping a value into a Delayed object.
 
     A ``Delayed`` supports most python operations, each of which creates
     another ``Delayed`` representing the result:

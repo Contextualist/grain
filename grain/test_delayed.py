@@ -10,20 +10,20 @@ from functools import partial
 run = partial(run, config_file=False)
 
 async def test_delayed_obj():
-    r_ = Delayed(Future(42))
+    r_ = delayedval(42)
     assert await r_ == 42
     assert await (1 + r_ * 2) == 85
     assert await (r_ + r_) == 84
 
     # inplace operation (setitem) creates a copy by default
-    r_ = Delayed(Future([3,4]), length=2)
+    r_ = delayedval([3,4], length=2)
     a, b = r_
     r_[1] += 99
     assert (await r_ == [3,103])
     assert (await a == 3) and (await b == 4)
 
     # causality is respected for inplace operation
-    r_ = Delayed(Future([3,4]), length=2)
+    r_ = delayedval([3,4], length=2)
     r_[1] += 99
     a, b = r_
     assert (await r_ == [3,103])
@@ -32,13 +32,13 @@ async def test_delayed_obj():
 async def _await(r_):
     assert await r_ == 43
 async def test_simutaneous_await():
-    r_ = Delayed(Future(42)) + 1
+    r_ = delayedval(42) + 1
     async with trio.open_nursery() as _n:
         for _ in range(3):
             _n.start_soon(_await, r_)
 
 def test_delayed_errors():
-    a = Delayed(Future([1, 2, 3]))
+    a = delayedval([1, 2, 3])
     # immutable
     pytest.raises(TypeError, lambda: setattr(a, "foo", 1))
     # can't iterate, or check if contains

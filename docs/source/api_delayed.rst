@@ -27,4 +27,6 @@ API Reference: delayed
 
 .. autofunction:: each
 
+.. autofunction:: delayedval
+
 .. autofunction:: run
