@@ -6,6 +6,7 @@ from urllib.parse import urlparse, parse_qsl
 
 from .conn import open_tcp_stream_to_head, serve_tcp_p2p
 from .conn_msgp import iter_packet, send_packet
+from .conn2 import open_tcp_edge_stream, serve_tcp_edge
 
 async def notify(url, msg, seg=False): # TODO: retry until connected
     """Open a connection, send `msg`, then close the
@@ -126,6 +127,8 @@ class SocketChannelAcceptor(SocketReceiveChannel):
 async def open_tcp_stream(proto, host, port, opts=None):
     if proto == "tcp":
         return await trio.open_tcp_stream(host, port, happy_eyeballs_delay=INFIN)
+    elif proto == "edge":
+        return await open_tcp_edge_stream(edge_file=host)
     elif proto == "bridge":
         assert opts
         return await open_tcp_stream_to_head(bridge=(host, port), **opts)
@@ -136,8 +139,9 @@ async def open_tcp_stream(proto, host, port, opts=None):
 async def serve_tcp(proto, handler, port, cs, *, host=None, handler_nursery=None, opts=None, task_status=trio.TASK_STATUS_IGNORED):
     with cs:
         if proto == "tcp":
-            listeners = await trio.open_tcp_listeners(port, host=host)
-            await trio.serve_listeners(handler, listeners, handler_nursery=handler_nursery, task_status=task_status)
+            await trio.serve_tcp(handler, port, host=host, handler_nursery=handler_nursery, task_status=task_status)
+        elif proto == "edge":
+            await serve_tcp_edge(handler, edge_file=host, handler_nursery=handler_nursery, task_status=task_status)
         elif proto == "bridge":
             assert opts
             await serve_tcp_p2p(handler, bridge=(host,port), handler_nursery=handler_nursery, task_status=task_status, **opts)
@@ -148,6 +152,8 @@ def parse_url(url):
     u = urlparse(url)
     if u.scheme == "tcp":
         return u.scheme, u.hostname, u.port, {}
+    elif u.scheme == "edge":
+        return u.scheme, u.path, None, {}
     elif u.scheme == "bridge":
         assert u.username, "a session key must be specified for the bridge protocol"
         return u.scheme, u.hostname, u.port, { "key": u.username, **dict(parse_qsl(u.query)) }

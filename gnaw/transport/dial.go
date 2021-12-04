@@ -22,6 +22,8 @@ func Dial(rawurl string) (net.Conn, error) {
 	switch proto {
 	case "tcp", "unix":
 		return net.Dial(proto, addr)
+	case "edge":
+		return DialE(addr)
 	case "bridge":
 		return DialB(addr, opts.Key, opts.Iface)
 	}
@@ -37,6 +39,8 @@ func Listen(rawurl string) (net.Listener, error) {
 	switch proto {
 	case "tcp", "unix":
 		return net.Listen(proto, addr)
+	case "edge":
+		return ListenE(addr)
 	case "bridge":
 		return ListenB(addr, opts.Key, opts.Iface)
 	}
@@ -65,7 +69,7 @@ func parseURL(rawurl string) (proto, addr string, opts *dopts, err error) {
 		if iq, ok := q["iface"]; ok {
 			opts.Iface = iq[0]
 		}
-	case "unix":
+	case "edge", "unix":
 		addr = u.Path
 	default:
 		return "", "", nil, fmt.Errorf("Unknown protocol %s", proto)

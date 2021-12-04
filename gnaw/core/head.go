@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -395,14 +396,23 @@ LOOP:
 	}
 }
 
-func (mgr *GrainManager) runAPI(url string, ge *GrainExecutor) {
+func (mgr *GrainManager) runAPI(ctx context.Context, url string, ge *GrainExecutor) {
 	ln, err := gnet.Listen(url)
 	if err != nil {
 		panic(err)
 	}
+	go func() {
+		<-ctx.Done()
+		ln.Close()
+	}()
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
 			if nerr, ok := err.(gnet.Error); ok && nerr.Temporary() {
 				log.Error().Err(err).Msg("GrainManager.runAPI: accept error")
 				continue
@@ -492,7 +502,7 @@ type GrainExecutor struct {
 	mgr     *GrainManager
 }
 
-func NewGrainExecutor(url string) *GrainExecutor {
+func NewGrainExecutor(ctx context.Context, url string) *GrainExecutor {
 	mgr := newGrainManager()
 	go mgr.run()
 	ge := &GrainExecutor{
@@ -501,7 +511,7 @@ func NewGrainExecutor(url string) *GrainExecutor {
 		Resultq: make(chan ResultMsg, 3000),
 		mgr:     mgr,
 	}
-	go mgr.runAPI(url, ge)
+	go mgr.runAPI(ctx, url, ge)
 	return ge
 }
 
@@ -528,6 +538,6 @@ func (ge *GrainExecutor) Run() {
 	}
 }
 
-func (ge *GrainExecutor) QuitAllWorkers() {
+func (ge *GrainExecutor) Close() {
 	ge.mgr.unregister("*")
 }

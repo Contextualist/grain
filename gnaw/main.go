@@ -1,14 +1,17 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"net"
 	"os"
+	"os/signal"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/Contextualist/grain/gnaw/core"
@@ -91,10 +94,9 @@ func dockLoop(conn net.Conn, exer *core.GrainExecutor, dockID uint, chRet <-chan
 	}
 }
 
-func run() {
-	exer := core.NewGrainExecutor(*wurl)
+func run(ctx context.Context) {
+	exer := core.NewGrainExecutor(ctx, *wurl)
 	go exer.Run()
-	go idleQuit(exer)
 
 	var mu sync.RWMutex
 	chDocks := make(map[uint]chan<- core.ResultMsg)
@@ -118,9 +120,19 @@ func run() {
 	if err != nil {
 		panic(err)
 	}
+	go func() {
+		<-ctx.Done()
+		exer.Close()
+		ln.Close()
+	}()
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
 			if nerr, ok := err.(gnet.Error); ok && nerr.Temporary() {
 				log.Error().Err(err).Msg("main.run: accept error")
 				continue
@@ -152,10 +164,14 @@ func run() {
 	}
 }
 
-func idleQuit(exer *core.GrainExecutor) {
-	<-idleTimer.C
-	exer.QuitAllWorkers() // this is async, so give 5s grace period
-	time.Sleep(5 * time.Second)
+// In the case of idle timeout or signal interrupt, cancel the listeners, quit all workers, then exit
+func cleanup(ctx context.Context, stop context.CancelFunc) {
+	select {
+	case <-idleTimer.C:
+		stop()
+	case <-ctx.Done():
+	}
+	time.Sleep(5 * time.Second) // worker quit is async, so give 5s grace period
 	os.Exit(0)
 }
 
@@ -186,5 +202,8 @@ func main() {
 	for i := uint(0); i < MAX_DOCKS; i++ {
 		docksAvail <- i
 	}
-	run()
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	go run(ctx)
+	cleanup(ctx, stop)
 }
