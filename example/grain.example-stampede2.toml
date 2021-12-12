@@ -1,15 +1,11 @@
 system = "slurm"
 
 [head]
-listen = "bridge://x@x.x.x.x:x?iface=em3" # login-node(em3) <-> comp-node(em1)/login-node(em3)
-cmd = '''
-python YOUR_ENTRYPOINT.py
-'''
+listen = "edge:///work2/USER/grain-edge-sp2" # FIXME: fill in username
 
 [worker]
 log_file = "./w{{HHMMSS}}-sp2.log"
-dial = "bridge://x@x.x.x.x:x" # comp-node(em1) <-> login-node(em3)/comp-node(em1)
-cli_dial = "bridge://x@104.154.223.146:9555?iface=em3" # login-node(em3) <-> comp-node(em3)
+dial = "edge:///work2/USER/grain-edge-sp2" # FIXME: fill in username
 
 [script]
 queue = "skx-dev"

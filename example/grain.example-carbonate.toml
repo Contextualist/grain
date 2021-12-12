@@ -1,20 +1,11 @@
 system = "slurm"
 
 [head]
-listen = "tcp://:4242"
-#listen = "bridge://x@x.x.x.x:x"
-cmd = '''
-python YOUR_ENTRYPOINT.py
-'''
-
-[head.script]
-queue = "general"
-walltime = "168:00:00"
+listen = "edge:///N/slate/USER/grain-edge-cb" # FIXME: fill in username
 
 [worker]
 log_file = "./w{{HHMMSS}}-cb.log"
-dial = "tcp://h1.carbonate.uits.iu.edu:4242" # h1 or h2
-#dial = "bridge://x@x.x.x.x:x"
+dial = "edge:///N/slate/USER/grain-edge-cb" # FIXME: fill in username
 
 [script]
 queue = "debug"

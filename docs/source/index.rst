@@ -11,7 +11,7 @@ Dask, Ray, etc.. Unlike the existing solutions, Grain focuses on one scenario:
 running external calculations (i.e. binary executables) with defined resource
 constraints.
 
-Release notes: https://github.iu.edu/IyengarLab/grain/releases (so far,
+Release notes: https://github.com/Contextualist/grain/releases (so far,
 commit messages provide better information for the features and fixes)
 
 
@@ -28,6 +28,7 @@ Work in progress:
 
 * Resource: a language for coordination
 * Bridge protocol: universal connection
+* Context module: plugin system for worker
 * FAQ
 * Low-level API reference
 

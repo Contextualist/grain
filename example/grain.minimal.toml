@@ -4,11 +4,6 @@
 
 system = "slurm"
 
-[head]
-cmd = '''
-python ENTRYPOINT.py
-'''
-
 [worker]
 dial = "tcp://elogin1.bigred3.uits.iu.edu:4242"
 

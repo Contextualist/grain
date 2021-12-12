@@ -243,19 +243,21 @@ a worker can monitor the status of multiple execution concurrently.
 
 For Grain to recognize your system, you need to have a profile/config. Full reference
 and samples of Grain's config syntax can be found in the
-`example <https://github.iu.edu/IyengarLab/grain/tree/master/example>`__ directory. You
+`example <https://github.com/Contextualist/grain/tree/master/example>`__ directory. You
 can start with one of the sample config and further customize it according to
 ``grain.reference.toml``. Here we will walk through some essensial settings to get
 started quickly.
 
 - ``system``: the HPC job management system (slurm or pbs)
 
-- ``head.listen``: the listening address of the head. You can start with a local port
-  (e.g. ``tcp://:4242``).
+- ``head.listen``: the listening address of the head. You can use the built-in Edge
+  protocol, which relies on network filesystem (disk space accessible to all nodes in a
+  supercomputing cluster). Set it to ``edge://PATH/TO/EDGE-FILE`` (e.g. If the network
+  filesystem is on ``/N/slate/USER``, set ``edge:///N/slate/USER/grain-edge-0``).
 
-- ``worker.dial``: the address worker uses to find head. You can figure our head's
-  address by running ``hostname``. (e.g. if your head is on ``elogin1`` and uses port
-  4242, then you can fill in ``tcp://elogin1:4242``)
+- ``worker.dial``: the address worker uses to find head. If you are using the Edge
+  protocol, head and workers use the same file to locate each others, so fill in the
+  same value as ``head.listen``.
 
 - ``script.[queue,walltime,cores,memory]``: These are the fields to be filled in when
   you are writing a HPC job script. Depending on your cluster they should have different
@@ -266,9 +268,9 @@ started quickly.
   one computational node.
 
 - ``setup_cleanup``: commands to setup the running environments (e.g. load modules,
-  source profiles, make cache dirs, etc.) and commands to clean up after a worker quits
-  (e.g. delete cache dirs, transfer usage analytics). Prepend ``defer`` to mark a command
-  to be clean up command (e.g. ``defer rm -r /tmp/cache``).
+  source profiles, make scratch dirs, etc.) and commands to clean up after a worker quits
+  (e.g. delete scratch dirs, transfer usage analytics). Prepend ``defer`` to mark a command
+  to be clean up command (e.g. ``defer rm -r /tmp/scratch``).
 
 There are more options in the reference config, but now you should be all set to run
 things on clusters. You may want to name the file ``grain.toml`` and put it in the

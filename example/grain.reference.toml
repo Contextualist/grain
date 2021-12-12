@@ -34,6 +34,7 @@ log_file = "" # optional, default (i.e. empty str) to stdout
 # connection. Supported protocols:
 # TCP: "tcp://:{port}"
 # Bridge: "bridge://{key}@{bridge_addr}:{bridge_port}[?iface={interface}]"
+# Edge: "edge://{path_to_edge_file}"
 listen = "tcp://:4242" # optional
 
 # Script to invoke your entrypoint. It is used to
@@ -41,6 +42,22 @@ listen = "tcp://:4242" # optional
 cmd = '''
 python ENTRYPOINT.py
 '''
+
+
+# Parameters for the Gnaw daemon
+[head.gnaw] # optional
+
+# Whether to use Gnaw instead of the built-in scheduler
+enabled = true
+
+# Gnaw's log file, default (i.e. empty str) to stdout
+log_file = ""
+
+# Maximum number of running instances allowed to connect to Gnaw
+max_conn = 8
+
+# Time for Gnaw to exit after the last instance quits
+idle_quit = "30m"
 
 
 # Override configs in `[script]` for head's job script.
@@ -61,6 +78,7 @@ log_file = "./w{{HHMMSS}}.log" # optional
 # Supported protocols:
 # TCP: "tcp://{addr}:{port}"
 # Bridge: "bridge://{key}@{bridge_addr}:{bridge_port}[?iface={interface}]"
+# Edge: "edge://{path_to_edge_file}"
 dial = "tcp://elogin1.bigred3.uits.iu.edu:4242"
 
 # Grain CLI uses this URL to send queries and commands
