@@ -55,19 +55,21 @@ class RemoteExecutor:
         if self.gnaw is DAEMON: # gnaw daemon with unixconn
             # process detection
             whoami = getpass.getuser()
-            pargs = next((
-                p.info['cmdline']
-                for p in psutil.process_iter(['cmdline', 'username', 'name'])
-                    if p.info['username'] == whoami and p.info['name'] == 'gnaw'
-            ), None)
-            if pargs is not None:
-                logger.info(f"found a running Gnaw instance, going to attach")
+            for p in psutil.process_iter(['cmdline', 'username', 'name']):
+                if p.info['username'] != whoami or p.info['name'] != 'gnaw':
+                    continue
+                pargs = p.info['cmdline']
                 parser = argparse.ArgumentParser()
+                parser.add_argument('-wurl', '--wurl')
                 parser.add_argument('-hurl', '--hurl')
                 r, _ = parser.parse_known_args(pargs)
+                if r.wurl != self.listen:
+                    continue
                 if r.hurl is None:
                     raise RuntimeError(f"The running Gnaw instance {pargs} does not have a `hurl` arg")
+                logger.info(f"found a running Gnaw instance, going to attach")
                 self.gnaw = r.hurl
+                break
             else:
                 logger.info(f"starting a Gnaw instance")
                 self.gnaw = f"unix:///tmp/gnaw-{secrets.token_urlsafe()}"
