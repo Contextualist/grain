@@ -50,7 +50,7 @@ class GrainRemote:
                     break
                 elif x == {'cmd':'HBT'}:
                     continue
-                tid, ok, r = x['tid'], x['ok'], x['result']
+                tid, ok, r = x['tid'], not x['exception'], x['result']
                 rq = self.resultq.get(tid)
                 if rq:
                     await rq.send((ok, pickle_loads(r)))

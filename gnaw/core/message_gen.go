@@ -1052,10 +1052,10 @@ func (z *ResultMsg) DecodeMsg(dc *msgp.Reader) (err error) {
 				err = msgp.WrapError(err, "Tid")
 				return
 			}
-		case "ok":
-			z.Ok, err = dc.ReadBool()
+		case "exception":
+			z.Exception, err = dc.ReadString()
 			if err != nil {
-				err = msgp.WrapError(err, "Ok")
+				err = msgp.WrapError(err, "Exception")
 				return
 			}
 		case "result":
@@ -1088,14 +1088,14 @@ func (z *ResultMsg) EncodeMsg(en *msgp.Writer) (err error) {
 		err = msgp.WrapError(err, "Tid")
 		return
 	}
-	// write "ok"
-	err = en.Append(0xa2, 0x6f, 0x6b)
+	// write "exception"
+	err = en.Append(0xa9, 0x65, 0x78, 0x63, 0x65, 0x70, 0x74, 0x69, 0x6f, 0x6e)
 	if err != nil {
 		return
 	}
-	err = en.WriteBool(z.Ok)
+	err = en.WriteString(z.Exception)
 	if err != nil {
-		err = msgp.WrapError(err, "Ok")
+		err = msgp.WrapError(err, "Exception")
 		return
 	}
 	// write "result"
@@ -1118,9 +1118,9 @@ func (z *ResultMsg) MarshalMsg(b []byte) (o []byte, err error) {
 	// string "tid"
 	o = append(o, 0x83, 0xa3, 0x74, 0x69, 0x64)
 	o = msgp.AppendUint(o, z.Tid)
-	// string "ok"
-	o = append(o, 0xa2, 0x6f, 0x6b)
-	o = msgp.AppendBool(o, z.Ok)
+	// string "exception"
+	o = append(o, 0xa9, 0x65, 0x78, 0x63, 0x65, 0x70, 0x74, 0x69, 0x6f, 0x6e)
+	o = msgp.AppendString(o, z.Exception)
 	// string "result"
 	o = append(o, 0xa6, 0x72, 0x65, 0x73, 0x75, 0x6c, 0x74)
 	o, err = z.Result.MarshalMsg(o)
@@ -1155,10 +1155,10 @@ func (z *ResultMsg) UnmarshalMsg(bts []byte) (o []byte, err error) {
 				err = msgp.WrapError(err, "Tid")
 				return
 			}
-		case "ok":
-			z.Ok, bts, err = msgp.ReadBoolBytes(bts)
+		case "exception":
+			z.Exception, bts, err = msgp.ReadStringBytes(bts)
 			if err != nil {
-				err = msgp.WrapError(err, "Ok")
+				err = msgp.WrapError(err, "Exception")
 				return
 			}
 		case "result":
@@ -1181,7 +1181,7 @@ func (z *ResultMsg) UnmarshalMsg(bts []byte) (o []byte, err error) {
 
 // Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
 func (z *ResultMsg) Msgsize() (s int) {
-	s = 1 + 4 + msgp.UintSize + 3 + msgp.BoolSize + 7 + z.Result.Msgsize()
+	s = 1 + 4 + msgp.UintSize + 10 + msgp.StringPrefixSize + len(z.Exception) + 7 + z.Result.Msgsize()
 	return
 }
 

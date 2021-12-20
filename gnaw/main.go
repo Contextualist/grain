@@ -21,7 +21,7 @@ import (
 	"github.com/tinylib/msgp/msgp"
 )
 
-const DOCK_COOLDOWN = 3 * time.Minute
+const DOCK_COOLDOWN = 1 * time.Minute
 
 var (
 	hurl        = flag.String("hurl", "", "URL for RemoteExers to connect")
@@ -43,6 +43,7 @@ func dockLoop(conn net.Conn, exer *core.GrainExecutor, dockID uint, chRet <-chan
 		_ = conn.Close()
 		dockClose()
 		log.Info().Uint("dockID", dockID).Msg("RemoteExer quits")
+		exer.Filter(func(tid uint) bool { return tid%MAX_DOCKS != dockID }) // discard all queued and running tasks
 		time.Sleep(DOCK_COOLDOWN)
 		docksAvail <- dockID
 		log.Debug().Uint("dockID", dockID).Msg("Dock is now available")

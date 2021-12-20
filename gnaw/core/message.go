@@ -18,9 +18,9 @@ type (
 	}
 
 	ResultMsg struct {
-		Tid    uint     `msg:"tid"`
-		Ok     bool     `msg:"ok"`
-		Result msgp.Raw `msg:"result"`
+		Tid       uint     `msg:"tid"`
+		Exception string   `msg:"exception"`
+		Result    msgp.Raw `msg:"result"`
 	}
 
 	PossibleRes struct {

@@ -5,26 +5,35 @@ import argparse
 import time
 from io import StringIO
 import json
+from math import inf as INFIN
 import logging
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 from .contextvar import GVAR
 from . import resource
 from .pair import notify, SocketChannel
 from .util import pickle_dumps, pickle_loads, load_contextmod, nullacontext
 
+cs_pool = {}
+
 async def exerf(tid, res, func, so):
     GVAR.res = res
     try:
-        with trio.fail_after(res.T) if hasattr(res, 'T') else nullacontext():
-            ok, r = True, await func()
+        with trio.fail_after(getattr(res, 'T', INFIN)) as cs:
+            cs_pool[tid] = cs
+            exception, r = "", await func()
+            del cs_pool[tid]
     except BaseException as e:
-        if type(e) is trio.Cancelled: e = WorkerCancelled()
-        ok, r = False, (traceback.format_exc(), e)
+        if cs_pool.pop(tid, None) is None:
+            e = UserCancelled() # task indicated as no longer needed; to be discarded
+        elif type(e) is trio.Cancelled:
+            e = WorkerCancelled() # worker going to quit; task to be resubmitted
+        exception, r = e.__class__.__name__, (traceback.format_exc(), e)
     finally:
         with trio.move_on_after(3) as cleanup_scope:
             cleanup_scope.shield = True
-            await so.send(dict(tid=tid, ok=ok, result=pickle_dumps(r)))
+            await so.send(dict(tid=tid, exception=exception, result=pickle_dumps(r)))
 
 NO_NEXT_URL = "NO_NEXT_URL"
 
@@ -59,6 +68,10 @@ async def grain_worker(RES, url):
                     elif cmd == "HBT": # heartbeat
                         await so.send(dict(cmd="HBT"))
                         continue
+                    elif cmd == "CAN": # cancel
+                        for tid in map(int, msg['name'].split(',')):
+                            if (cs := cs_pool.pop(tid, None)) is not None:
+                                cs.cancel()
                     elif cmd == "REC": # reconnect
                         return msg['name']
                 else:
@@ -94,6 +107,10 @@ def parse_res(res_str):
 async def anop(*_): pass
 
 class WorkerCancelled(BaseException):
+    def __str__(self):
+        return "Cancelled"
+
+class UserCancelled(BaseException):
     def __str__(self):
         return "Cancelled"
 

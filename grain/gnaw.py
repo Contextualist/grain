@@ -24,7 +24,7 @@ async def dock_loop(_c, exer, dock, rq):
         try:
             task_status.started()
             async for i, rslt in rq:
-                await _c.send(dict(ok=True, tid=i, result=pickle_dumps(rslt)))
+                await _c.send(dict(exception="", tid=i, result=pickle_dumps(rslt)))
         except trio.ClosedResourceError:
             _n.cancel_scope.cancel()
         # don't close rq, we'll reuse it

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -42,6 +43,8 @@ type (
 		mu  sync.Mutex
 		m   map[uint]pendingTask // id: pendingTask
 	}
+
+	taskPredicateFn func(uint) bool // predicate func for filtering task
 
 	// A Remote sends functions to its worker and watch for their results
 	Remote struct {
@@ -106,9 +109,13 @@ func (w *Remote) sendLoop() {
 		if wt, ok := t.res.(*multiResource).resm["WTime"]; ok { // NOTE: assumed multiResource
 			tid := t.id
 			timeout = time.AfterFunc(wt.(*wtime).t+3*time.Minute, func() {
+				pt, ok := w.pending.LoadAndDelete(tid)
+				if !ok { // in rare cases, we receive the result right after this timeout get triggered
+					return
+				}
 				atomic.AddUint64(&DefaultStat.lostOrLateResponse, 1)
 				log.Debug().Uint("tid", tid).Msg("resubmit due to 3 min pass timeout")
-				w.resubmit(tid)
+				w.resubmit(tid, pt)
 			})
 		}
 		w.pending.Store(t.id, pendingTask{t.res, t.rawFn, timeout})
@@ -166,33 +173,54 @@ func (w *Remote) recvLoop(receiver *msgp.Reader) {
 			continue
 		}
 
-		if r.Ok {
-			pt, ok := w.pending.LoadAndDelete(r.Tid)
-			if !ok {
-				atomic.AddUint64(&DefaultStat.lateResponse, 1)
-				log.Info().Str("wname", w.name).Uint("tid", r.Tid).Msg("Remote.recvLoop: received phantom job's result")
-				continue
-			}
+		pt, ok := w.pending.LoadAndDelete(r.Tid)
+		if !ok { // has been resubmmitted by the pending task's local timeout (pt.timeout)
+			atomic.AddUint64(&DefaultStat.lateResponse, 1)
+			log.Info().Str("wname", w.name).Uint("tid", r.Tid).Msg("Remote.recvLoop: received phantom job's result")
+			continue
+		}
+		switch r.Exception {
+		case "":
 			atomic.AddUint64(&DefaultStat.completed, 1)
 			atomic.StoreInt64(&w.health, FULL_HEALTH)
 			w.resultq <- r
 			w.mgr.dealloc(w, pt.res)
-		} else {
+		case "UserCancelled":
+			atomic.AddUint64(&DefaultStat.exception, 1)
+			w.mgr.dealloc(w, pt.res) // sink task if it is cancelled by user
+		default: // TODO: Critical vs temporary exceptions
 			atomic.AddUint64(&DefaultStat.exception, 1)
 			log.Debug().Uint("tid", r.Tid).Msg("resubmit due to exception")
-			w.resubmit(r.Tid)
+			w.resubmit(r.Tid, pt)
 		}
 	}
 }
 
-func (w *Remote) resubmit(tid uint) {
-	pt, ok := w.pending.LoadAndDelete(tid)
-	if !ok {
-		return // This job should have been taken care
-	}
+func (w *Remote) resubmit(tid uint, pt *pendingTask) {
 	w.mgr.health_dec(w, 1)
 	w.retryq <- Task{tid, pt.res, pt.rawFn}
 	w.mgr.dealloc(w, pt.res)
+}
+
+// request worker to cancel certain running tasks; those tasks will return a UserCancelled status and not be resubmitted
+func (w *Remote) batchCancel(pred taskPredicateFn) {
+	w.pending.mu.Lock()
+	var tids []string
+	for tid := range w.pending.m {
+		if !pred(tid) {
+			tids = append(tids, strconv.Itoa(int(tid)))
+		}
+	}
+	w.pending.mu.Unlock()
+	if len(tids) == 0 {
+		return
+	}
+	tidsStr := strings.Join(tids, ",")
+
+	can, _ := (&ControlMsg{Cmd: "CAN", Name: &tidsStr}).MarshalMsg(nil)
+	w.mu.Lock()
+	_, _ = w.conn.Write(can)
+	w.mu.Unlock()
 }
 
 func (w *Remote) closeSend() {
@@ -289,7 +317,7 @@ type (
 		chAlloc   chan struct{}
 		chDealloc chan rmtRes
 		chCmd     chan mgrAction
-		chStat    chan *strings.Builder
+		chCmdAux  chan interface{} // misc obj to be pass in / out along with the cmd
 	}
 )
 
@@ -298,6 +326,7 @@ const (
 	CMD_UNR
 	CMD_TRM
 	CMD_STA
+	CMD_CAN
 )
 
 func newGrainManager() *GrainManager {
@@ -306,7 +335,7 @@ func newGrainManager() *GrainManager {
 		chAlloc:   make(chan struct{}),
 		chDealloc: make(chan rmtRes, 256),
 		chCmd:     make(chan mgrAction),
-		chStat:    make(chan *strings.Builder),
+		chCmdAux:  make(chan interface{}),
 	}
 }
 
@@ -390,7 +419,15 @@ LOOP:
 				if request != nil {
 					fmt.Fprintf(s, "next pending job's res: %s\n", request.res.String())
 				}
-				mgr.chStat <- s
+				mgr.chCmdAux <- s
+			case CMD_CAN:
+				pred := (<-mgr.chCmdAux).(taskPredicateFn)
+				if !pred(request.id) {
+					request = nil
+				}
+				for _, w := range pool {
+					go w.batchCancel(pred)
+				}
 			}
 		}
 	}
@@ -484,7 +521,7 @@ func (mgr *GrainManager) health_dec(w *Remote, v int64) {
 
 func (mgr *GrainManager) stat(conn net.Conn, npending int) {
 	mgr.chCmd <- mgrAction{cmd: CMD_STA}
-	s := <-mgr.chStat
+	s := (<-mgr.chCmdAux).(*strings.Builder)
 	fmt.Fprintf(s, "queued jobs: %d", npending)
 
 	var b []byte
@@ -493,6 +530,11 @@ func (mgr *GrainManager) stat(conn net.Conn, npending int) {
 	_, _ = raw.UnmarshalMsg(b)
 	rmsg, _ := (&ResultMsg{Result: raw}).MarshalMsg(nil)
 	conn.Write(rmsg)
+}
+
+func (mgr *GrainManager) batchCancel(pred taskPredicateFn) {
+	mgr.chCmd <- mgrAction{cmd: CMD_CAN}
+	mgr.chCmdAux <- pred
 }
 
 type GrainExecutor struct {
@@ -536,6 +578,36 @@ func (ge *GrainExecutor) Run() {
 		}
 		ge.mgr.schedule(t)
 	}
+}
+
+// Filter all queued and running tasks base on a tid criterion
+func (ge *GrainExecutor) Filter(pred taskPredicateFn) {
+	var wg sync.WaitGroup
+	filter := func(ch chan Task) {
+		wg.Add(1)
+		var newBuf []Task
+	CHAN_LOOP:
+		for {
+			select {
+			case t := <-ch:
+				if pred(t.id) {
+					newBuf = append(newBuf, t)
+				}
+			default:
+				break CHAN_LOOP
+			}
+		}
+		for _, t := range newBuf {
+			ch <- t
+		}
+		wg.Done()
+	}
+	go filter(ge.prjobq)
+	go filter(ge.jobq)
+	wg.Wait()
+	// drain running tasks after draining the pending ones to avoid
+	// thundering herd dispatch due to a sudden availability of resources
+	ge.mgr.batchCancel(pred)
 }
 
 func (ge *GrainExecutor) Close() {

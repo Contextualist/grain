@@ -164,7 +164,7 @@ func simpleWorker(wc net.Conn) {
 	rcv, snd := msgp.NewReader(wc), msgp.NewWriter(wc)
 	chTid := make(chan uint, 64)
 	go func() {
-		r := ResultMsg{Ok: true}
+		r := ResultMsg{}
 		for tid := range chTid {
 			r.Tid = tid
 			err := r.EncodeMsg(snd)
@@ -191,7 +191,7 @@ func callbackWorker(wc net.Conn, fn func(uint), fin func()) {
 	rcv, snd := msgp.NewReader(wc), msgp.NewWriter(wc)
 	chTid := make(chan uint, 64)
 	go func() {
-		r := ResultMsg{Ok: true}
+		r := ResultMsg{}
 		for tid := range chTid {
 			fn(tid)
 			r.Tid = tid
@@ -236,7 +236,11 @@ func latencyErrorWorker(wc net.Conn, baseLatency time.Duration, errorRate float3
 		r := ResultMsg{}
 		for tid := range chTid {
 			r.Tid = tid
-			r.Ok = rand.Float32() > errorRate
+			if rand.Float32() < errorRate {
+				r.Exception = "E"
+			} else {
+				r.Exception = ""
+			}
 			err := r.EncodeMsg(snd)
 			if returnOrElsePanic(err) {
 				return
