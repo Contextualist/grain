@@ -349,5 +349,7 @@ def run(subtasks, *args, **kwargs):
         str are grouped together.
       gnaw (Optional[str]): If set, connect to the Gnaw executor with address
         ``gnaw``, ignoring ``head.gnaw`` in the config.
+      prioritized (bool): Default to False. For Gnaw executor only. If true,
+        submit tasks to the prioritized queue.
     """
     trio.run(boot, subtasks, args, kwargs)

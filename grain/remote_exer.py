@@ -19,12 +19,12 @@ DAEMON = object()
 
 class RemoteExecutor:
     """Pass the jobs on to an external scheduler"""
-    def __init__(self, _n=None, nolocal=False, config=None, gnaw=DAEMON, name="", **kwargs):
+    def __init__(self, _n=None, nolocal=False, config=None, gnaw=DAEMON, name="", prioritized=False, **kwargs):
         if kwargs:
             logger.warning(f"kwargs {kwargs} are ignored")
         assert nolocal, "RemoteExecutor has no local worker, as scheduling is delegated"
         self.gnaw = gnaw
-        self.name = name
+        self.name = name + ("-p" if prioritized else "")
         self.push_job, self.pull_job = trio.open_memory_channel(INFIN)
         self.push_result, self.resultq = trio.open_memory_channel(INFIN)
         self.jobn = 0
@@ -67,11 +67,11 @@ class RemoteExecutor:
                     continue
                 if r.hurl is None:
                     raise RuntimeError(f"The running Gnaw instance {pargs} does not have a `hurl` arg")
-                logger.info(f"found a running Gnaw instance, going to attach")
+                logger.info(f"found a running Gnaw instance for {self.listen!r}, going to attach")
                 self.gnaw = r.hurl
                 break
             else:
-                logger.info(f"starting a Gnaw instance")
+                logger.info(f"starting a Gnaw instance at {self.listen!r}")
                 self.gnaw = f"unix:///tmp/gnaw-{secrets.token_urlsafe()}"
                 conf = self.gnaw_conf
                 _ = await trio.open_process(
