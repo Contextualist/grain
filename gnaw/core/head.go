@@ -422,8 +422,9 @@ LOOP:
 				mgr.chCmdAux <- s
 			case CMD_CAN:
 				pred := (<-mgr.chCmdAux).(taskPredicateFn)
-				if !pred(request.id) {
+				if request != nil && !pred(request.id) {
 					request = nil
+					mgr.chAlloc <- struct{}{}
 				}
 				for _, w := range pool {
 					go w.batchCancel(pred)
@@ -584,7 +585,6 @@ func (ge *GrainExecutor) Run() {
 func (ge *GrainExecutor) Filter(pred taskPredicateFn) {
 	var wg sync.WaitGroup
 	filter := func(ch chan Task) {
-		wg.Add(1)
 		var newBuf []Task
 	CHAN_LOOP:
 		for {
@@ -602,6 +602,7 @@ func (ge *GrainExecutor) Filter(pred taskPredicateFn) {
 		}
 		wg.Done()
 	}
+	wg.Add(2)
 	go filter(ge.prjobq)
 	go filter(ge.jobq)
 	wg.Wait()

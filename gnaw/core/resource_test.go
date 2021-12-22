@@ -4,9 +4,13 @@ import (
 	"testing"
 )
 
-func assertEq(t *testing.T, a interface{}, b interface{}) {
+func assertEq(t *testing.T, a interface{}, b interface{}, msg ...string) {
 	if a != b {
-		t.Fatalf("%s != %s", a, b)
+		if len(msg) > 0 {
+			t.Fatalf("%s != %s: %s", a, b, msg[0])
+		} else {
+			t.Fatalf("%s != %s", a, b)
+		}
 	}
 }
 

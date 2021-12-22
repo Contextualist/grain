@@ -42,11 +42,11 @@ func testPlain(t *testing.T, N, M int, workerf func(net.Conn, chan<- struct{})) 
 	rs := make([]bool, N+1)
 	for i := 0; i < N; i++ {
 		r := <-ge.Resultq
-		assertEq(t, rs[r.Tid], false)
+		assertEq(t, rs[r.Tid], false, "repeated ack")
 		rs[r.Tid] = true
 	}
 	for _, received := range rs[1:] {
-		assertEq(t, received, true)
+		assertEq(t, received, true, "unack task")
 	}
 	chFin <- struct{}{}
 }
@@ -127,6 +127,39 @@ func TestManager(t *testing.T) {
 		t.Fatalf("no result for the retried job")
 	}
 	ge.mgr.unregister("m-w2")
+}
+
+func TestUserCancel(t *testing.T) {
+	t.Parallel()
+	ge := newTestGrainExecutor()
+	N := 3
+
+	// init with N pending tasks
+	for id := 1; id <= N; id++ {
+		ge.Submit(uint(id), And(Memory(1)), nil)
+	}
+	time.Sleep(1 * time.Millisecond)
+	assertEq(t, len(ge.jobq), N-1, "UserCancel setup")
+
+	// cancel all
+	ge.Filter(func (_ uint) bool { return false })
+	assertEq(t, len(ge.jobq), 0, "UserCancel cancel")
+
+	// check if the pipeline is intact
+	for id := 1; id <= N; id++ {
+		ge.Submit(uint(id), And(Memory(1)), nil)
+	}
+	addWorker("uc", And(Memory(8)), simpleWorker, ge)
+	rs := make([]bool, N+1)
+	for i := 0; i < N; i++ {
+		r := <-ge.Resultq
+		assertEq(t, rs[r.Tid], false, "UserCancel post-cancel repeated ack")
+		rs[r.Tid] = true
+	}
+	for _, received := range rs[1:] {
+		assertEq(t, received, true, "UserCancel post-cancel unack task")
+	}
+	ge.mgr.unregister("uc")
 }
 
 func BenchmarkExer(b *testing.B) {
