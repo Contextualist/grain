@@ -38,7 +38,8 @@ var (
 	idleTimer  = time.NewTimer(8760 * time.Hour)
 )
 
-func dockLoop(conn net.Conn, exer *core.GrainExecutor, dockID uint, chRet <-chan core.ResultMsg, dockClose func()) {
+func dockLoop(conn net.Conn, exer *core.GrainExecutor, dockID uint, chRet chan core.ResultMsg, dockClose func()) {
+	chDone := make(chan struct{})
 	defer func() {
 		_ = conn.Close()
 		dockClose()
@@ -50,17 +51,56 @@ func dockLoop(conn net.Conn, exer *core.GrainExecutor, dockID uint, chRet <-chan
 		if len(docksAvail) == int(MAX_DOCKS) {
 			idleTimer.Reset(*idleTimeout) // the timer is guarentee to be stopped before
 		}
+		close(chDone)
 	}()
 
+	bufException := make(chan core.ResultMsg, 32)
 	go func() { // send results back
 		snd := msgp.NewWriter(conn)
 		for r := range chRet {
+			if len(r.Exception) > 0 && r.Tid > 0 {
+				bufException <- r
+				continue
+			}
 			err := r.EncodeMsg(snd)
 			if err != nil {
 				return
 			}
 			err = snd.Flush()
 			if err != nil {
+				return
+			}
+		}
+	}()
+
+	go func() { // buffer exceptions
+		var curExp *core.ResultMsg
+		var count int
+		send := func() {
+			curExp.Tid = 0
+			if count > 1 {
+				curExp.Exception = fmt.Sprintf("%s (repeated %d times)", curExp.Exception, count)
+			}
+			chRet <- *curExp
+		}
+		var timeout <-chan time.Time
+		for {
+			select {
+			case nxtExp := <-bufException:
+				if curExp != nil {
+					if nxtExp.Exception == curExp.Exception {
+						count++
+						continue
+					}
+					send()
+				}
+				curExp, count = &nxtExp, 1
+				timeout = time.After(1 * time.Second) // wait for similar exception for up to 1s
+			case <-timeout:
+				send()
+				curExp, count = nil, 0
+				timeout = nil
+			case <-chDone:
 				return
 			}
 		}

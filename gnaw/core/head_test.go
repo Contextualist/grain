@@ -41,7 +41,10 @@ func testPlain(t *testing.T, N, M int, workerf func(net.Conn, chan<- struct{})) 
 	}
 	rs := make([]bool, N+1)
 	for i := 0; i < N; i++ {
-		r := <-ge.Resultq
+		var r ResultMsg
+		for r = range ge.Resultq {
+			if len(r.Exception) == 0 { break }
+		}
 		assertEq(t, rs[r.Tid], false, "repeated ack")
 		rs[r.Tid] = true
 	}
@@ -104,7 +107,7 @@ func TestManager(t *testing.T) {
 
 	// unregister cancels all pending jobs
 	addWorker("m-w1", And(Memory(1)), stepWorker, ge)
-	ge.Submit(2, And(Memory(1)), nil)
+	ge.Submit(3, And(Memory(1)), nil)
 	waitEnter()
 	ge.mgr.unregister("m-w1")
 	select {
@@ -246,6 +249,7 @@ func callbackWorker(wc net.Conn, fn func(uint), fin func()) {
 			return
 		}
 		if msg.Tid == 0 { // assumed as FIN msg
+			wc.Close() // not a graceful shutdown; discard pending tasks
 			continue
 		}
 		chTid <- msg.Tid
@@ -292,6 +296,7 @@ func latencyErrorWorker(wc net.Conn, baseLatency time.Duration, errorRate float3
 			return
 		}
 		if msg.Tid == 0 { // assumed as FIN msg
+			wc.Close() // not a graceful shutdown; discard pending tasks
 			continue
 		}
 		lat := time.Nanosecond * time.Duration(float64(baseLatency.Nanoseconds())*rand.ExpFloat64())

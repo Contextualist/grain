@@ -86,10 +86,14 @@ class RemoteExecutor:
                 await send_packet(self._c._so, dict(name=self.name)) # handshake
                 self._n.start_soon(self._sender)
                 async for x in self._c:
-                    #assert x['ok'] # gnaw handles all retries
+                    if x['exception']: # display exception
+                        tb, exp = pickle_loads(x['result'])
+                        logger.error(f"Exception from task: {x['exception']}: {exp}\n{tb}")
+                        continue
                     self.push_result.send_nowait((x['tid'], pickle_loads(x['result'])))
                     self._wg.done()
-                # FIXME: we cannot tell if gnaw quit unexpectedly
+            if not self._c.is_clean:
+                raise RuntimeError("connection to Gnaw lost unexpectedly")
     async def __aenter__(self):
         self._n.start_soon(self.run)
         return self

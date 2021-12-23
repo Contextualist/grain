@@ -2,9 +2,7 @@ package core
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io"
 	"net"
 	"path/filepath"
 	"strconv"
@@ -162,7 +160,7 @@ func (w *Remote) recvLoop(receiver *msgp.Reader) {
 		var r ResultMsg
 		err := r.DecodeMsg(receiver)
 		if err != nil {
-			if !(errors.Is(err, net.ErrClosed) || errors.Is(err, io.ErrClosedPipe)) {
+			if !w.closing {
 				log.Error().Str("wname", w.name).Err(err).Msg("Remote.recvLoop: read error")
 				w.mgr.health_dec(w, FULL_HEALTH)
 			}
@@ -188,9 +186,10 @@ func (w *Remote) recvLoop(receiver *msgp.Reader) {
 		case "UserCancelled":
 			atomic.AddUint64(&DefaultStat.exception, 1)
 			w.mgr.dealloc(w, pt.res) // sink task if it is cancelled by user
-		default: // TODO: Critical vs temporary exceptions
+		default:
 			atomic.AddUint64(&DefaultStat.exception, 1)
 			log.Debug().Uint("tid", r.Tid).Msg("resubmit due to exception")
+			w.resultq <- r // notify back exception while handling resubmit
 			w.resubmit(r.Tid, pt)
 		}
 	}
@@ -233,15 +232,21 @@ func (w *Remote) closeSend() {
 func (w *Remote) close() {
 	// assume that w.chInput will not be passed in data during and after
 	// this function call
+	w.closing = true
 	bye, _ := (&ControlMsg{Cmd: "FIN"}).MarshalMsg(nil)
 	w.mu.Lock()
 	_, _ = w.conn.Write(bye)
-	_ = w.conn.Close()
 	w.mu.Unlock()
 
-	// migrate all pending tasks once the pending gets stable
 	w.closeSend()
-	<-w.recvQuit
+	select {
+	case <-w.recvQuit:
+	case <-time.After(HEARTBEAT_INTERVAL * HEARTBEAT_TOLERANCE):
+	}
+	w.mu.Lock()
+	_ = w.conn.Close()
+	w.mu.Unlock()
+	// migrate all pending tasks once the pending gets stable
 	w.pending.mu.Lock()
 	for tid, pt := range w.pending.m {
 		if pt.timeout != nil {
@@ -390,7 +395,7 @@ LOOP:
 					if matched, _ := filepath.Match(a.wn, w.name); !matched {
 						continue
 					}
-					w.closing = true
+					w.closing = true // set before w.close() in case w.close() runs in next manager cycle
 					if a.cmd == CMD_UNR {
 						go w.close() // might need extra manager cycle; safe to move on
 						pool = append(pool[:i], pool[i+1:]...)
@@ -513,7 +518,7 @@ func (mgr *GrainManager) dealloc(w *Remote, res Resource) {
 }
 
 func (mgr *GrainManager) health_dec(w *Remote, v int64) {
-	if atomic.AddInt64(&w.health, -v) > 0 {
+	if w.closing || atomic.AddInt64(&w.health, -v) > 0 {
 		return
 	}
 	log.Warn().Str("wname", w.name).Msg("Quit worker due to poor health")
