@@ -5,11 +5,14 @@ from .contextvar import GVAR
 from .util import Future
 
 import trio
+
 import operator
 from functools import partial
 from inspect import iscoroutinefunction
 from copy import copy
 from collections.abc import Iterable
+
+MAX_OPS = 100
 
 
 async def each(*dos):
@@ -160,6 +163,8 @@ class Delayed:
         self._length = length
         self._copy = copy_on_setitem
         self._eval_started = False
+        if len(self._post_ops) > MAX_OPS:
+            self._partition_ops()
     def __getstate__(self):
         return tuple(getattr(self, i) for i in self.__slots__)
     def __setstate__(self, state):
@@ -190,6 +195,12 @@ class Delayed:
     def __await__(self):
         """Await on the Delayed object returns its result"""
         return self.result().__await__()
+    get = result # implements the Future interface
+
+    def _partition_ops(self):
+        chunk_ops, self._post_ops = self._post_ops[:MAX_OPS], self._post_ops[MAX_OPS:]
+        self._future = Delayed(self._future, chunk_ops, self._length, self._copy)
+        _gn.start_soon(self._future.get) # kickstart the chunked eval
 
     def __dir__(self):
         return dir(type(self))
@@ -207,7 +218,10 @@ class Delayed:
 
     def __setitem__(self, index, val):
         #print("memorize op", operator.setitem, [index,val])
+        assert not self._eval_started, "cannot add inplace operation __setitem__ after evaluation has started"
         self._post_ops.append((operator.setitem,[index,val])) # setitem is an inplace op
+        if len(self._post_ops) >= MAX_OPS:
+            self._partition_ops()
 
     def __iter__(self):
         if self._length is None:

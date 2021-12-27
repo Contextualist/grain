@@ -24,6 +24,15 @@ API Reference: delayed
 
 .. _a more thorough discussion: https://vorpus.org/blog/notes-on-structured-concurrency-or-go-statement-considered-harmful
 
+.. note:: Since the submission / enqueuing of a delayed function is synchronous,
+  while function dispatching behind the scene is asynchronous (because it involves
+  network or subprocess IO), going through too much submission without a checkpoint
+  might overload the queue. Most of the ``await`` are a checkpoint; you can always
+  use ``trio.sleep(0)`` as a trivial checkpoint. For more information read Trio's
+  documentation on `checkpoints`_.
+
+.. _checkpoints: https://trio.readthedocs.io/en/stable/reference-core.html#checkpoints
+
 
 .. autofunction:: each
 
