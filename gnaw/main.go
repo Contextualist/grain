@@ -28,7 +28,8 @@ var (
 	wurl        = flag.String("wurl", "", "URL for Workers to connect")
 	maxdocks    = flag.Uint("n", 3, "Maximum numbers of RemoteExers allowed to connect")
 	idleTimeout = flag.Duration("t", 8760*time.Hour, "Time to exit after the last RemoteExer quit")
-	logfile     = flag.String("log", "", "logfile location; leave blank for logging to stderr")
+	logfile     = flag.String("log", "", "Logfile location; leave blank for logging to stderr")
+	swarm       = flag.Int("swarm", -1, "Expected size of worker swarm; -1 to disable autoscale")
 	verbose     = flag.Bool("verbose", false, "Print out debug level log")
 	printVer    = flag.Bool("version", false, "Print version and exit")
 
@@ -136,7 +137,7 @@ func dockLoop(conn net.Conn, exer *core.GrainExecutor, dockID uint, chRet chan c
 }
 
 func run(ctx context.Context) {
-	exer := core.NewGrainExecutor(ctx, *wurl)
+	exer := core.NewGrainExecutor(ctx, *wurl, *swarm)
 	go exer.Run()
 
 	var mu sync.RWMutex

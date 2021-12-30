@@ -59,6 +59,11 @@ max_conn = 8
 # Time for Gnaw to exit after the last instance quits
 idle_quit = "30m"
 
+# Expected size of worker swarm for autoscale; default 0 to disable autoscale
+swarm = 0
+
+extra_args = []
+
 
 # Override configs in `[script]` for head's job script.
 # `[worker.script]` does similarly for worker's job script.

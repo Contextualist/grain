@@ -195,6 +195,15 @@ def quit(conf, force, worker_name_pattern):
             await notify(f"{head}", dict(cmd="UNR" if force else "TRM", name=name), seg=True)
     trio.run(_unreg, conf.cli_dial, worker_name_pattern)
 
+@main.command(help="Enable / change worker autoscaling")
+@global_options(conf_mode='worker')
+@click.argument('swarm_size', type=int)
+def scale(conf, swarm_size):
+    async def _scale(head, swarm_size):
+        with _handle_connection_error(head):
+            await notify(f"{head}", dict(cmd="SCL", name=str(swarm_size)), seg=True)
+    trio.run(_scale, conf.cli_dial, swarm_size)
+
 @contextmanager
 def _handle_connection_error(url):
     try:

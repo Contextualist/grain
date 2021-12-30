@@ -36,10 +36,12 @@ class Config:
 
 @attrs
 class Gnaw:
-    enabled:   bool = True
-    log_file:  str = ""
-    max_conn:  int = 8
-    idle_quit: str = "30m"
+    enabled:    bool = True
+    log_file:   str = ""
+    max_conn:   int = 8
+    idle_quit:  str = "30m"
+    swarm:      int = 0
+    extra_args: List[str] = attr.Factory(list)
 
 @attrs
 class Head(Config):

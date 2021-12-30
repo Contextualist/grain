@@ -439,10 +439,15 @@ LOOP:
 	}
 }
 
-func (mgr *GrainManager) runAPI(ctx context.Context, url string, ge *GrainExecutor) {
+func (mgr *GrainManager) runAPI(ctx context.Context, url string, strawmanSwarm int, ge *GrainExecutor) {
 	ln, err := gnet.Listen(url)
 	if err != nil {
 		panic(err)
+	}
+	var sm *Strawman
+	var smQuit context.CancelFunc
+	if strawmanSwarm > 0 {
+		sm, smQuit = newStrawman(ctx, strawmanSwarm)
 	}
 	go func() {
 		<-ctx.Done()
@@ -486,6 +491,26 @@ func (mgr *GrainManager) runAPI(ctx context.Context, url string, ge *GrainExecut
 			mgr.terminate(*msg.Name)
 		case "STA":
 			mgr.stat(conn, len(ge.jobq)+len(ge.prjobq))
+		case "SCL":
+			currSwarmSize, err := strconv.Atoi(*msg.Name)
+			if err != nil {
+				break
+			}
+			if currSwarmSize == 0 {
+				if sm != nil {
+					smQuit()
+					sm = nil
+					log.Info().Msg("Strawman: disabled")
+				}
+				break
+			}
+			if sm == nil {
+				log.Info().Int("swarm_size", currSwarmSize).Msg("Strawman: enabled")
+				sm, smQuit = newStrawman(ctx, currSwarmSize)
+			} else {
+				log.Info().Int("swarm_size", currSwarmSize).Msg("Strawman: adjust worker scaling")
+				sm.chScaleChange <- currSwarmSize
+			}
 		default:
 			log.Warn().Str("cmd", msg.Cmd).Stringer("raddr", conn.RemoteAddr()).Msg("GrainManager received unknown command")
 		}
@@ -550,7 +575,7 @@ type GrainExecutor struct {
 	mgr     *GrainManager
 }
 
-func NewGrainExecutor(ctx context.Context, url string) *GrainExecutor {
+func NewGrainExecutor(ctx context.Context, url string, strawmanSwarm int) *GrainExecutor {
 	mgr := newGrainManager()
 	go mgr.run()
 	ge := &GrainExecutor{
@@ -559,7 +584,7 @@ func NewGrainExecutor(ctx context.Context, url string) *GrainExecutor {
 		Resultq: make(chan ResultMsg, 3000),
 		mgr:     mgr,
 	}
-	go mgr.runAPI(ctx, url, ge)
+	go mgr.runAPI(ctx, url, strawmanSwarm, ge)
 	return ge
 }
 

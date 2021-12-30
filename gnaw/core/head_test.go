@@ -43,7 +43,9 @@ func testPlain(t *testing.T, N, M int, workerf func(net.Conn, chan<- struct{})) 
 	for i := 0; i < N; i++ {
 		var r ResultMsg
 		for r = range ge.Resultq {
-			if len(r.Exception) == 0 { break }
+			if len(r.Exception) == 0 {
+				break
+			}
 		}
 		assertEq(t, rs[r.Tid], false, "repeated ack")
 		rs[r.Tid] = true
@@ -145,7 +147,7 @@ func TestUserCancel(t *testing.T) {
 	assertEq(t, len(ge.jobq), N-1, "UserCancel setup")
 
 	// cancel all
-	ge.Filter(func (_ uint) bool { return false })
+	ge.Filter(func(_ uint) bool { return false })
 	assertEq(t, len(ge.jobq), 0, "UserCancel cancel")
 
 	// check if the pipeline is intact
