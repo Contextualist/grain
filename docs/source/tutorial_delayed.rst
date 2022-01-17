@@ -334,6 +334,14 @@ our jobs finish, all workers quit, too. You can repeat this with different resou
 to the jobs, add delays in the jobs using ``trio.sleep``, and try to see if you can make
 the jobs running on different computation nodes.
 
+.. note::
+
+   You might notice that the workers do not leave immediately after all the computation is
+   done.  That is because the scheduler is still running in the background, so that if you
+   start another calculation mission shortly, the workers can be reused. You can also run
+   multiple missions concurrently, sharing a swarm of workers.  Missions (i.e. the head
+   processes) running on the same machine with the same `head.listen` config will reuse the
+   scheduler.
 
 What's next?
 ------------

@@ -22,13 +22,13 @@ commit messages provide better information for the features and fixes)
    tutorial_delayed.rst
    api_delayed.rst
    resource.rst
+   connection.rst
    util.rst
 
 Work in progress:
 
 * Resource: a language for coordination
-* Bridge protocol: universal connection
-* Context module: plugin system for worker
+* Advanced usage
 * FAQ
 * Low-level API reference
 
