@@ -5,9 +5,7 @@ from .conn_msgp import send_packet
 from .pair import SocketChannel
 from .util import WaitGroup, pickle_dumps, pickle_loads, timeblock
 
-import os
 import secrets
-import sys
 from functools import partial
 from math import inf as INFIN
 import getpass
@@ -51,7 +49,7 @@ class RemoteExecutor:
             async for tid, res, fargs in self.pull_job:
                 self._wg.add()
                 await send_packet(self._c._so, dict(tid=tid, res=res, func=pickle_dumps(fargs))) # We don't need locking
-    async def run(self):
+    async def run(self, task_status=trio.TASK_STATUS_IGNORED):
         if self.gnaw is DAEMON: # gnaw daemon with unixconn
             # process detection
             whoami = getpass.getuser()
@@ -85,6 +83,7 @@ class RemoteExecutor:
                        self.push_result:
                 await send_packet(self._c._so, dict(name=self.name)) # handshake
                 self._n.start_soon(self._sender)
+                task_status.started()
                 async for x in self._c:
                     if x['exception']: # display exception
                         tb, exp = pickle_loads(x['result'])
@@ -95,7 +94,7 @@ class RemoteExecutor:
             if not self._c.is_clean:
                 raise RuntimeError("connection to Gnaw lost unexpectedly")
     async def __aenter__(self):
-        self._n.start_soon(self.run)
+        await self._n.start(self.run)
         return self
     async def __aexit__(self, *exc):
         if any(exc):

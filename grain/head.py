@@ -342,7 +342,7 @@ class GrainExecutor:
         await self._wg.wait() # no pending task => end of resubmission
         await self.push_job.aclose()
 
-    async def run(self):
+    async def run(self, task_status=trio.TASK_STATUS_IGNORED):
         res = None
         reg_probe("next pending job's res", lambda: res)
         with timeblock("all jobs"):
@@ -351,12 +351,13 @@ class GrainExecutor:
                        self.push_result, \
                        trio.open_nursery() as _n, \
                        self.pull_job:
+                task_status.started()
                 async for tid, res, fn in self.pull_job:
                     res, w = await self.mgr.schedule(res)
                     _n.start_soon(self.__task_with_res, tid, res, w, fn)
 
     async def __aenter__(self):
-        self._n.start_soon(self.run)
+        await self._n.start(self.run)
         return self
     async def __aexit__(self, *exc):
         if any(exc):
@@ -366,7 +367,7 @@ class GrainExecutor:
     async def run_till_finish(self):
         async with trio.open_nursery() as self._n:
             self.mgr._n = self._n
-            self._n.start_soon(self.run)
+            await self._n.start(self.run)
             self._n.start_soon(self.sealer)
         self.results = [None] * self.jobn
         async with self.resultq:
