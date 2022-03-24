@@ -16,7 +16,7 @@ Before you begin
 
 2. ``pip install --upgrade grain-scheduler``
 
-3. Can you ``import grain``? If so then you're good to go!
+3. Can you run ``grain --version``? If so then you're good to go!
 
 
 Delayed function and object
@@ -282,7 +282,7 @@ Now, before you proceed, let's do a final check:
 
 .. code-block:: none
 
-   > grain up --dry
+   grain up --dry
 
 This command generates the worker submission script with your config. Instead of submiting
 it right away, the dry run print out the script for your inspection. You can see how each
@@ -327,12 +327,17 @@ So let's launch some workers. On another shell, run the following to submit 2 wo
 
 .. code-block:: none
 
-   > grain up -n 2
+   grain up -n 2
 
-As soon as the HPC jobs begin to run and join the head, the jobs start to run. When all of
-our jobs finish, all workers quit, too. You can repeat this with different resources assign
-to the jobs, add delays in the jobs using ``trio.sleep``, and try to see if you can make
-the jobs running on different computation nodes.
+As soon as the HPC jobs begin to run and join the head, the jobs start to run. In the mean
+time, you can always check the workers' resource availability by
+
+.. code-block:: none
+
+   grain ls
+
+Try changing the code with different resources assign to the jobs, add delays in the jobs using
+```trio.sleep``, and try to see if you can make the jobs running on different computation nodes.
 
 .. note::
 
@@ -340,7 +345,7 @@ the jobs running on different computation nodes.
    done.  That is because the scheduler is still running in the background, so that if you
    start another calculation mission shortly, the workers can be reused. You can also run
    multiple missions concurrently, sharing a swarm of workers.  Missions (i.e. the head
-   processes) running on the same machine with the same `head.listen` config will reuse the
+   processes) running on the same machine with the same ``head.listen`` config will reuse the
    scheduler.
 
 What's next?
@@ -352,5 +357,5 @@ or even implementing tasklets yourself. Here's what to explore:
 - Tasklets in real world: run computational chemistry packages with `ASE-Grain <https://github.com/Contextualist/ase-grain>`__.
 - Checkout :doc:`api_delayed`.
 - Have a look at what built-in resources are available.
-- Setup a Grain bridge that makes worker connection smarter and makes it possible to send
-  your jobs across multiple clusters.
+- Setup a :doc:`Grain Bridge server <connection>` that makes it possible to send your jobs across
+  multiple clusters.

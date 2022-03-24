@@ -2,11 +2,11 @@ sphinx ~= 4.0
 sphinx_rtd_theme >= 1.0.0
 sphinxcontrib-trio
 
-trio >= 0.15.0
+trio >= 0.20.0
 dill >= 0.3.2
 msgpack
-tomli
-attrs
+tomli >= 1.1.0 ; python_version < '3.11'
+attrs >= 20.1.0
 cattrs
 click
 psutil

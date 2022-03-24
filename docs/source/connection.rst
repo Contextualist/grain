@@ -14,11 +14,11 @@ section is generally useful information.
 Available connection protocols:
 
 -  `TCP <https://en.wikipedia.org/wiki/Transmission_Control_Protocol>`__/IP
-   address (``tcp:\\\\``), the vanilla network protocol
+   address (``tcp:\\``), the vanilla network protocol
 -  `Unix domain socket <https://en.wikipedia.org/wiki/Unix_domain_socket>`__
-   (``unix:\\\\``), like TCP, but for same-host connection
--  Bridge (``bridge:\\\\``), connection discovery through a coordinator server
--  Edge (``edge:\\\\``), connection discovery through network filesystem
+   (``unix:\\``), like TCP, but for same-host connection
+-  Bridge (``bridge:\\``), connection discovery through a coordinator server
+-  Edge (``edge:\\``), connection discovery through network filesystem
 
 Bridge and Edge protocols are private connection discovery methods of Grain.
 Connection discovery is useful in a supercomputing cluster because the allocated
@@ -80,13 +80,51 @@ TODO
 Edge protocol
 -------------
 
-TODO
+Edge protocol is a zero-config connection discovery mechanism. It relies only on a
+file on the network filesystem accessible to all parties, that serves for exchanging
+the connection information. Similar to the Bridge protocol, the dialers can initiate
+the connection before the listener starts listening. The protocol URL is specified as:
 
-..
-   caveat: well-behaved NFS; firewall;
+.. code:: none
 
-..
-   edge file specification
+   edge://{path/to/edge_file}
+
+where ``edge_file`` is an arbitrary file name on the network filesystem for connection
+information exchange.
+
+Caveat
+~~~~~~
+
+Since the Edge protocol relies on file system for locking and synchronization, the
+network filesystem must support ``flock`` or ``fcntl``. Edge protocol has a stricter
+requirement on the network connectivity as compared to the Bridge protocol: the party
+that joins later must be able to reach the party that initiated the connection. You
+might encounter connection issues if any party is behind a NAT or firewall.
+
+Edge file specification
+~~~~~~~~~~~~~~~~~~~~~~~
+
+Edge file is a JSON file with the following schema::
+
+   class Listener:
+      """Information from the listener"""
+       host: str            # hostname
+       lid:  int            # unique identifier of the listener instance
+       urls: dict[str, str] # available network interfaces and corresponding URLs
+
+   class Dialer:
+      """Information from a dialer"""
+       host: str            # hostname
+       urls: dict[str, str] # available network interfaces and corresponding URLs
+
+   class EdgeFile:
+       listener: Listener
+       dialer:   list[Dialer]
+
+The party that initiates the connection will listen on random ports for all network
+interfaces and announce the information in the Edge file. The party that joins later
+obtains the information from the Edge file and tries out all available URLs. Access to
+the Edge file is guarded by a lock file.
 
 
 Msgpack schema for head-worker communication

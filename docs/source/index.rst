@@ -20,6 +20,7 @@ commit messages provide better information for the features and fixes)
    :caption: Contents:
 
    tutorial_delayed.rst
+   best_practice.rst
    api_delayed.rst
    resource.rst
    connection.rst
