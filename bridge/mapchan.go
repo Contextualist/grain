@@ -4,18 +4,17 @@ import (
 	"sync"
 )
 
-type _m map[string]interface{}
-type mapChan struct {
-	_m
+type mapChan[T any] struct {
+	_m map[string]chan T
 	sync.Mutex
-	fac func() interface{}
+	fac func() chan T
 }
 
-func newMapChan(fac func() interface{}) *mapChan {
-	return &mapChan{_m: make(_m), fac: fac}
+func newMapChan[T any](fac func() chan T) *mapChan[T] {
+	return &mapChan[T]{_m: make(map[string]chan T), fac: fac}
 }
 
-func (m *mapChan) Get(k string) interface{} {
+func (m *mapChan[T]) Get(k string) chan T {
 	m.Lock()
 	defer m.Unlock()
 	if v, ok := m._m[k]; ok {
@@ -25,17 +24,17 @@ func (m *mapChan) Get(k string) interface{} {
 	return m._m[k]
 }
 
-func (m *mapChan) Delete(k string) {
+func (m *mapChan[T]) Delete(k string) {
 	m.Lock()
 	delete(m._m, k)
 	m.Unlock()
 }
 
 var (
-	subd2head = newMapChan(func() interface{} { return make(chan []byte, 1) })
-	head2subd = newMapChan(func() interface{} { return make(chan []byte, 1) })
-	relays    = newMapChan(func() interface{} { return make(chan struct{}, 0) })
-	backlogs  = newMapChan(func() interface{} {
+	subd2head = newMapChan(func() chan []byte { return make(chan []byte, 1) })
+	head2subd = newMapChan(func() chan []byte { return make(chan []byte, 1) })
+	relays    = newMapChan(func() chan struct{} { return make(chan struct{}, 0) })
+	backlogs  = newMapChan(func() chan struct{} {
 		ch := make(chan struct{}, *loadBal)
 		for i := 0; i < *loadBal; i++ {
 			ch <- struct{}{}

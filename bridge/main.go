@@ -22,8 +22,8 @@ func headLoop(s net.Conn, key string) {
 		close(chCancel)
 	}()
 
-	chBacklog := backlogs.Get(key).(chan struct{})
-	chRelay := relays.Get(key).(chan struct{})
+	chBacklog := backlogs.Get(key)
+	chRelay := relays.Get(key)
 	var token struct{}
 	select {
 	case token = <-chBacklog: // backlog acts as a capacity limiter, init with N tokens. N=1: exclusive relay; N=inf: max load balance
@@ -31,7 +31,7 @@ func headLoop(s net.Conn, key string) {
 		token = <-chRelay // if we reach the capacity limit, acquire from a running instance
 	}
 
-	chNew := subd2head.Get(key).(chan []byte)
+	chNew := subd2head.Get(key)
 	for {
 		select {
 		case subd := <-chNew:
@@ -65,9 +65,9 @@ func handle(s net.Conn) {
 	case "SUBD": // subd requests connection to head in session `key`
 		subdPubl, subdPriv := xPubl, payload
 		log.Printf("subd %s requests connection with head %s\n", subdPubl, key)
-		subd2head.Get(key).(chan []byte) <- []byte(subdPubl + "|" + subdPriv)
+		subd2head.Get(key) <- []byte(subdPubl + "|" + subdPriv)
 		// NOTE: after this point, subd might close connection. Head shall make appropriate judgement
-		err = sendPacket(s, <-head2subd.Get(subdPubl).(chan []byte))
+		err = sendPacket(s, <-head2subd.Get(subdPubl))
 		if !ok_(err) {
 			log.Printf("broken connection from %s\n", subdPubl)
 		} else {
@@ -76,7 +76,7 @@ func handle(s net.Conn) {
 		head2subd.Delete(subdPubl)
 	case "HEAD": // head replies subd `subdPubl` with an available endpoint
 		subdPubl, headPubl, headPriv := key, xPubl, payload
-		head2subd.Get(subdPubl).(chan []byte) <- []byte(headPubl + "|" + headPriv)
+		head2subd.Get(subdPubl) <- []byte(headPubl + "|" + headPriv)
 	default:
 		log.Printf("unrecognized command %s from %s (%s,%s)\n", CMD, xPubl, key, payload)
 	}

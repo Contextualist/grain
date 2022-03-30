@@ -1,17 +1,12 @@
 module github.com/Contextualist/grain/gnaw
 
-go 1.17
-
-replace (
-	github.com/Contextualist/grain/gnaw/core => ./core
-	github.com/Contextualist/grain/gnaw/transport => ./transport
-)
+go 1.18
 
 require (
 	github.com/gofrs/flock v0.8.1
-	github.com/rs/zerolog v1.23.0
+	github.com/rs/zerolog v1.26.1
 	github.com/tinylib/msgp v1.1.6
-	golang.org/x/sys v0.0.0-20211103235746-7861aae1554b
+	golang.org/x/sys v0.0.0-20220319134239-a9b59b0215f8
 )
 
 require (
