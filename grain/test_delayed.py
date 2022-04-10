@@ -29,6 +29,13 @@ async def test_delayed_obj():
     assert (await r_ == [3,103])
     assert (await a == 3) and (await b == 103)
 
+async def test_numpy():
+    np = pytest.importorskip('numpy')
+    assert (await np.dot([2], delayedval([3]))) == 6
+    assert (await np.dot(delayedval([3]), [2])) == 6
+    assert (await np.dot(delayedval([2]), delayedval([3]))) == 6
+    assert (await np.mean(delayedval(np.arange(10)), dtype=int)) == 4
+
 async def _await(r_):
     assert await r_ == 43
 async def test_simutaneous_await():

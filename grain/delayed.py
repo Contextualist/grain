@@ -133,6 +133,7 @@ class Delayed:
         * Item mutation __setitem__ (``a[0] = 1``)
         * Attribute access (``a.size``)
         * Method calls (``a.index(0)``)
+        * Most NumPy functions (``np.mean(a)``)
 
     Operations that aren’t supported include:
 
@@ -177,14 +178,16 @@ class Delayed:
         self._eval_started = True
         _base_future, self._future = self._future, Future()
         r = await _base_future.get()
-        for op, other in self._post_ops:
+        for op, other, kwargs in self._post_ops:
             #print("post_op", op, "on", other)
             for i, o in enumerate(other):
                 if not isinstance(o, Delayed): continue
-                #print("eval", o)
                 other[i] = await o.result() # eval o if not done
+            for k, o in kwargs.items():
+                if not isinstance(o, Delayed): continue
+                kwargs[k] = await o.result() # eval o if not done
             if op is not operator.setitem: # NOTE: exclude the inplace op
-                r = op(r, *other)
+                r = op(r, *other, **kwargs)
             else:
                 if self._copy:
                     r = copy(r) # shallow copy is ok because setitem does not change the value itself
@@ -208,7 +211,7 @@ class Delayed:
     def __getattr__(self, attr):
         if attr.startswith("_"):
             raise AttributeError(f"Attribute {attr} not found")
-        return Delayed(self._future, [*self._post_ops, (getattr,[attr])], self._length, self._copy)
+        return Delayed(self._future, [*self._post_ops, (getattr,[attr],{})], self._length, self._copy)
 
     def __setattr__(self, attr, val):
         if attr in self.__slots__:
@@ -219,7 +222,7 @@ class Delayed:
     def __setitem__(self, index, val):
         #print("memorize op", operator.setitem, [index,val])
         assert not self._eval_started, "cannot add inplace operation __setitem__ after evaluation has started"
-        self._post_ops.append((operator.setitem,[index,val])) # setitem is an inplace op
+        self._post_ops.append((operator.setitem,[index,val],{})) # setitem is an inplace op
         if len(self._post_ops) >= MAX_OPS:
             self._partition_ops()
 
@@ -243,15 +246,21 @@ class Delayed:
             return self
         return types.MethodType(self, instance)
 
+    def __array_function__(self, func, _types, args, kwargs): # NumPy function support
+        self_, *args = args
+        if not isinstance(self_, Delayed):
+            self_ = delayedval(self_)
+        return self._get_operator(func)(self_, *args, **kwargs)
+
     @classmethod
     def _get_operator(cls, op, inv=False):
         """Returns the memorized version of op
         """
         if inv:
             op = right(op)
-        def mem_op(self, *other): # record the op in the instance returned
+        def mem_op(self, *other, **kwargs): # record the op in the instance returned
             #print("memorize op", op, other)
-            return cls(self._future, [*self._post_ops, (op,list(other))], self._length, self._copy)
+            return cls(self._future, [*self._post_ops, (op,list(other),kwargs)], self._length, self._copy)
         return mem_op
 
 def right(op):
@@ -268,14 +277,14 @@ def _bind_operator(cls, op):
         name = name[:-1]
     elif name == "inv":
         name = "invert"
-    meth = "__{0}__".format(name)
+    meth = f"__{name}__"
     setattr(cls, meth, cls._get_operator(op))
     if name not in (
         'add', 'and', 'divmod', 'floordiv', 'lshift', 'matmul', 'mod',
         'mul', 'or', 'pow', 'rshift', 'sub', 'truediv', 'xor',
     ):
         return
-    rmeth = "__r{0}__".format(name)
+    rmeth = f"__r{name}__"
     setattr(cls, rmeth, cls._get_operator(op, inv=True))
 for op in (
     operator.abs,
