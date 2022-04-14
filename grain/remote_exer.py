@@ -72,7 +72,7 @@ class RemoteExecutor:
                 logger.info(f"starting a Gnaw instance at {self.listen!r}")
                 self.gnaw = f"unix:///tmp/gnaw-{secrets.token_urlsafe()}"
                 conf = self.gnaw_conf
-                _ = await trio.open_process(
+                _ = await trio.lowlevel.open_process(
                     ["gnaw", "-hurl", self.gnaw, "-wurl", self.listen, "-n", str(conf.max_conn),
                              "-log", conf.log_file, "-t", conf.idle_quit, "-swarm", str(conf.swarm), *conf.extra_args],
                     start_new_session=True, # daemon

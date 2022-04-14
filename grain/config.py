@@ -1,6 +1,8 @@
-import tomli
-import attr
-attrs = attr.s(auto_attribs=True)
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import tomli as tomllib
+from attrs import define, Factory
 import cattr
 
 from typing import Optional, List, Dict, Any, Literal
@@ -11,7 +13,7 @@ from pathlib import Path
 import logging
 logger = logging.getLogger(__name__)
 
-@attrs
+@define(slots=False)
 class Script:
     cores:         int
     memory:        int
@@ -19,53 +21,53 @@ class Script:
     shebang:       str = "#!/bin/bash"
     queue:         str = "''"
     walltime:      str = "12:00:00"
-    extra_args:    List[str] = attr.Factory(list)
+    extra_args:    List[str] = Factory(list)
 
-@attrs
+@define
 class CustomSystem:
     submit_cmd: str
     directory:  str
     template:   str
 
-@attrs
+@define
 class Config:
     system:        str
-    script:        Script = attr.Factory(Script)
+    script:        Script = Factory(Script)
     contextmod:    str = ""
     custom_system: Optional[CustomSystem] = None
 
-@attrs
+@define
 class Gnaw:
     enabled:    bool = True
     log_file:   str = ""
     max_conn:   int = 8
     idle_quit:  str = "30m"
     swarm:      int = 0
-    extra_args: List[str] = attr.Factory(list)
+    extra_args: List[str] = Factory(list)
 
-@attrs
+@define
 class Head(Config):
     name:          str = "grain_head"
     main_log_file: str = "/dev/null"
     log_file:      str = ""
     listen:        str = "tcp://:4242"
     cmd:           str = ""
-    gnaw:          Gnaw = attr.Factory(Gnaw)
+    gnaw:          Gnaw = Factory(Gnaw)
 
-@attrs
+@define
 class Worker(Config):
     name:     str = "w{{HHMMSS}}"
     log_file: str = "w{{HHMMSS}}.log"
     dial:     str = "UNSET"
     cli_dial: str = ""
-    res:      Dict[str, Any] = attr.Factory(dict)
+    res:      Dict[str, Any] = Factory(dict)
     def __attrs_post_init__(self):
         if self.dial == "UNSET":
             raise ValueError("Config `worker.dial` is not set")
         if not self.cli_dial:
             self.cli_dial = self.dial
 
-@attrs
+@define
 class GenericConfig:
     head:   Head
     worker: Worker
@@ -91,7 +93,7 @@ def load_conf(config=None, mode: Literal['', 'head', 'worker']=''):
         config = config or ENV.get("GRAIN_CONFIG", "grain.toml")
         try:
             config_s = Path(config).read_bytes().decode() if type(config) is str else config.read()
-            conf = tomli.loads(config_s)
+            conf = tomllib.loads(config_s)
         except FileNotFoundError:
             logger.error(f"Cannot find Grain config file {config!r}")
             exit(1)
