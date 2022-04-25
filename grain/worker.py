@@ -29,6 +29,8 @@ async def exerf(tid, res, func, so):
             e = UserCancelled() # task indicated as no longer needed; to be discarded
         elif type(e) is trio.Cancelled:
             e = WorkerCancelled() # worker going to quit; task to be resubmitted
+        elif type(e) is trio.MultiError:
+            e = trio.MultiError.filter((lambda e_: WorkerCancelled() if type(e_) is trio.Cancelled else e_), e)
         exception, r = e.__class__.__name__, (traceback.format_exc(), e)
     finally:
         with trio.move_on_after(3) as cleanup_scope:
