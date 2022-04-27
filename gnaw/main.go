@@ -42,8 +42,8 @@ var (
 func dockLoop(conn net.Conn, exer *core.GrainExecutor, dockID uint, chRet chan core.ResultMsg, dockClose func()) {
 	chDone := make(chan struct{})
 	defer func() {
-		_ = conn.Close()
 		dockClose()
+		_ = conn.Close()
 		log.Info().Uint("dockID", dockID).Msg("RemoteExer quits")
 		exer.Filter(func(tid uint) bool { return tid%MAX_DOCKS != dockID }) // discard all queued and running tasks
 		time.Sleep(DOCK_COOLDOWN)
@@ -65,10 +65,17 @@ func dockLoop(conn net.Conn, exer *core.GrainExecutor, dockID uint, chRet chan c
 			}
 			err := r.EncodeMsg(snd)
 			if err != nil {
-				return
+				break
 			}
 			err = snd.Flush()
 			if err != nil {
+				break
+			}
+		}
+		for { // drain until this dock is removed from the list
+			select {
+			case <-chRet:
+			case <-chDone:
 				return
 			}
 		}
