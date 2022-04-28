@@ -33,12 +33,7 @@ async def each(*dos):
 def delayedval(v, length=None, copy_on_setitem=True):
     """A convinient helper function that wraps any value into a
     delayed object that immediately return that value at evaluation.
-    This is useful for types with operator overloading. e.g.::
-
-        import numpy as np
-        r_ = afn() # `afn` is a delayed function returning an array
-        #np.array([0]) + r_ # unexpected behavior / exception
-        delayedval(np.array([0])) + r_ # ok
+    This is useful for testing.
 
     Args:
       v (Any): value to be wrapped
@@ -251,6 +246,7 @@ class Delayed:
         if not isinstance(self_, Delayed):
             self_ = delayedval(self_)
         return self._get_operator(func)(self_, *args, **kwargs)
+    __array_ufunc__ = None # override NumPy ufunc with self's dunder-r methods
 
     @classmethod
     def _get_operator(cls, op, inv=False):

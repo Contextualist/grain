@@ -25,6 +25,10 @@ jobs:
         python -m pip install --upgrade pip
         pip install .
         pip install -r test-requirements.txt
+    - name: Install dependency NumPy
+      if: "!endsWith(matrix.python-version, '-dev')"
+      run: |
+        pip install numpy
     - name: Test with pytest
       working-directory: ./grain
       run: |
