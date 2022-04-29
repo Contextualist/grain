@@ -10,6 +10,7 @@ from functools import partial
 from math import inf as INFIN
 import getpass
 import argparse
+from pathlib import Path
 import logging
 logger = logging.getLogger(__name__)
 
@@ -72,12 +73,19 @@ class RemoteExecutor:
                 logger.info(f"starting a Gnaw instance at {self.listen!r}")
                 self.gnaw = f"unix:///tmp/gnaw-{secrets.token_urlsafe()}"
                 conf = self.gnaw_conf
-                _ = await trio.lowlevel.open_process(
+                gnawproc = await trio.lowlevel.open_process(
                     ["gnaw", "-hurl", self.gnaw, "-wurl", self.listen, "-n", str(conf.max_conn),
                              "-log", conf.log_file, "-t", conf.idle_quit, "-swarm", str(conf.swarm), *conf.extra_args],
                     start_new_session=True, # daemon
                 )
-                await trio.sleep(0.1) # wait for gnaw startup
+                for retry in range(7): # wait for gnaw startup
+                    await trio.sleep(0.1 * 2**retry)
+                    if Path(self.gnaw[len('unix://'):]).exists():
+                        break
+                    if gnawproc.returncode is not None:
+                        raise RuntimeError(f"failed to start Gnaw, exit code {gnawproc.returncode}")
+                else:
+                    raise RuntimeError("Gnaw took too long to start")
         with timeblock("all jobs"):
             async with SocketChannel(self.gnaw, dial=True, _n=self._n) as self._c, \
                        self.push_result:
