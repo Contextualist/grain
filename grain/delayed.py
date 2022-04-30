@@ -249,17 +249,17 @@ class Delayed:
     __array_ufunc__ = None # override NumPy ufunc with self's dunder-r methods
 
     @classmethod
-    def _get_operator(cls, op, inv=False):
+    def _get_operator(cls, op):
         """Returns the memorized version of op
         """
-        if inv:
-            op = right(op)
         def mem_op(self, *other, **kwargs): # record the op in the instance returned
             #print("memorize op", op, other)
             return cls(self._future, [*self._post_ops, (op,list(other),kwargs)], self._length, self._copy)
         return mem_op
 
-def right(op):
+Delayed.__call__ = Delayed._get_operator(lambda fn, *args, **kwargs: fn(*args, **kwargs))
+
+def _right(op):
     """Wrapper to create 'right' version of operator given left version"""
     def _inner(self, other):
         return op(other, self)
@@ -281,7 +281,7 @@ def _bind_operator(cls, op):
     ):
         return
     rmeth = f"__r{name}__"
-    setattr(cls, rmeth, cls._get_operator(op, inv=True))
+    setattr(cls, rmeth, cls._get_operator(_right(op)))
 for op in (
     operator.abs,
     operator.neg,

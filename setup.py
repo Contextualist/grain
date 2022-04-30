@@ -43,7 +43,7 @@ setuptools.setup(
         "dill >= 0.3.2",
         "msgpack",
         "tomli >= 1.1.0 ; python_version < '3.11'",
-        "attrs >= 20.1.0",
+        "attrs >= 21.3.0",
         "cattrs",
         "click",
         "psutil",

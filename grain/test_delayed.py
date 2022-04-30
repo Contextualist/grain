@@ -35,7 +35,7 @@ async def test_numpy():
     assert (await np.dot(delayedval([3]), [2])) == 6
     assert (await np.dot(delayedval([2]), delayedval([3]))) == 6
     assert (await np.mean(delayedval(np.arange(10)), dtype=int)) == 4
-    assert (await (np.arange(3) + delayedval(np.arange(3))).sum)() == 6
+    assert (await (np.arange(3) + delayedval(np.arange(3))).sum()) == 6
 
 async def _await(r_):
     assert await r_ == 43
