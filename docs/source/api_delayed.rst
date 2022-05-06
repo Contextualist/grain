@@ -29,7 +29,8 @@ API Reference: delayed
   network or subprocess IO), going through too much submission without a checkpoint
   might overload the queue. Most of the ``await`` are a checkpoint; you can always
   use ``trio.sleep(0)`` as a trivial checkpoint. For more information read Trio's
-  documentation on `checkpoints`_.
+  documentation on `checkpoints`_. Imposing a rate limit is another way to include
+  checkpoints; see :func:`grain.util.QueueLimiter`
 
 .. _checkpoints: https://trio.readthedocs.io/en/stable/reference-core.html#checkpoints
 

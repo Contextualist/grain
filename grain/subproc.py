@@ -14,11 +14,9 @@ from grain.contextvar import GVAR # process local
 IDLE_TIMEOUT = 60 # keep idle subprocess for 1min
 
 def subprocify(fn):
-    """Subprocify is a decorator that turns a sync
-    function (usually a CPU-bound job) into an async
-    job to be executed on an external Python interpreter
-    subprocess. Please allocate 1 processor and adequate
-    vmem for this job.
+    """Subprocify is a decorator that turns a sync function (usually a CPU-bound
+    job) into an async job to be executed on an external Python interpreter
+    subprocess. Please allocate at least 1 processor and adequate vmem for this job.
     """
     if iscoroutinefunction(getattr(fn, "func", fn)):
         raise TypeError("subprocify only wraps sync functions, but an async function is given")
@@ -43,7 +41,9 @@ idle_subp = set()
 
 @asynccontextmanager
 async def subprocess_pool_scope(): # process local
-    """Initialize the nursery for subprocess workers
+    """Initialize the subprocess pool.
+    This is required before any subprocified function is called.
+    After the first call, this function is a no-op.
     """
     global _sn
     if _sn is not None and not _sn._closed:
@@ -53,8 +53,6 @@ async def subprocess_pool_scope(): # process local
         yield
         _sn.cancel_scope.cancel()
 async def subprocess_pool_daemon(task_status=trio.TASK_STATUS_IGNORED): # process local
-    """Initialize the nursery for subprocess workers
-    """
     global _sn
     if _sn is not None and not _sn._closed:
         task_status.started(_sn.cancel_scope)
@@ -65,6 +63,8 @@ async def subprocess_pool_daemon(task_status=trio.TASK_STATUS_IGNORED): # proces
 
 async def start_worker_process():
     p = _Process()
+    if _sn is None:
+        raise RuntimeError("You need to initialize the subprocess pool by `subprocess_pool_scope`.")
     await _sn.start(p.loop)
     return p
 
@@ -111,6 +111,8 @@ async def pickle_load(f):
     return pickle.loads(d)
 
 class BrokenSubprocessError(SubprocessError):
+    """Exception raised when a subprocess crashes due to an unrecoverable error.
+    """
     def from_(self, e):
         self.__cause__, self.__traceback__ = e, e.__traceback__
         return self

@@ -22,9 +22,11 @@ commit messages provide better information for the features and fixes)
    tutorial_delayed.rst
    best_practice.rst
    api_delayed.rst
+   api_subproc.rst
+   util.rst
+   advance.rst
    resource.rst
    connection.rst
-   util.rst
 
 Work in progress:
 
