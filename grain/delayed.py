@@ -33,7 +33,15 @@ async def each(*dos):
 def delayedval(v, length=None, copy_on_setitem=True):
     """A convinient helper function that wraps any value into a
     delayed object that immediately return that value at evaluation.
-    This is useful for testing.
+    This is useful for testing and for the following edge case in NumPy::
+
+        r_ = afn() # `afn` is a delayed function returning a len-2 array
+
+        a = np.arange(3)
+        #a[[0,1]] += r_ # ValueError; __setitem__ cannot turn `a` into a delayed object
+
+        a = delayedval(np.arange(3))
+        a[[0,1]] += r_ # Ok
 
     Args:
       v (Any): value to be wrapped
@@ -206,7 +214,7 @@ class Delayed:
     def __getattr__(self, attr):
         if attr.startswith("_"):
             raise AttributeError(f"Attribute {attr} not found")
-        return Delayed(self._future, [*self._post_ops, (getattr,[attr],{})], self._length, self._copy)
+        return self._get_operator(getattr)(self, attr)
 
     def __setattr__(self, attr, val):
         if attr in self.__slots__:
@@ -242,11 +250,10 @@ class Delayed:
         return types.MethodType(self, instance)
 
     def __array_function__(self, func, _types, args, kwargs): # NumPy function support
-        self_, *args = args
-        if not isinstance(self_, Delayed):
-            self_ = delayedval(self_)
-        return self._get_operator(func)(self_, *args, **kwargs)
-    __array_ufunc__ = None # override NumPy ufunc with self's dunder-r methods
+        return self._get_operator(_deself(func))(self, *args, **kwargs)
+    def __array_ufunc__(self, ufunc, method, *inputs, **kwargs): # NumPy ufunc support
+        # Simply setting the __array_ufunc__ method to None does not support inplace op (e.g. +=)
+        return self._get_operator(_deself(getattr(ufunc, method)))(self, *inputs, **kwargs)
 
     @classmethod
     def _get_operator(cls, op):
@@ -256,6 +263,12 @@ class Delayed:
             #print("memorize op", op, other)
             return cls(self._future, [*self._post_ops, (op,list(other),kwargs)], self._length, self._copy)
         return mem_op
+
+def _deself(op):
+    """For NumPy function / ufunc, self is amid the args, and the first self is redundant"""
+    def _inner(_self, *args, **kwargs):
+        return op(*args, **kwargs)
+    return _inner
 
 Delayed.__call__ = Delayed._get_operator(lambda fn, *args, **kwargs: fn(*args, **kwargs))
 

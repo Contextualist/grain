@@ -36,6 +36,23 @@ async def test_numpy():
     assert (await np.dot(delayedval([2]), delayedval([3]))) == 6
     assert (await np.mean(delayedval(np.arange(10)), dtype=int)) == 4
     assert (await (np.arange(3) + delayedval(np.arange(3))).sum()) == 6
+    a = np.arange(3)
+    a += delayedval(np.arange(3))
+    a += a
+    assert (await a.sum()) == 18
+
+    a = delayedval(np.arange(3))
+    a[[0,1]] += np.array([8,9])
+    assert np.allclose((await a), [8,10,2])
+
+    a = delayedval(np.arange(3))
+    a[[0,1]] += delayedval(np.array([8,9]))
+    assert np.allclose((await a), [8,10,2])
+
+    # __setitem__ on NumPy does not pass back control
+    a = np.arange(3)
+    with pytest.raises(ValueError):
+        a[[0,1]] += delayedval(np.array([8,9]))
 
 async def _await(r_):
     assert await r_ == 43
