@@ -72,13 +72,8 @@ func dockLoop(conn net.Conn, exer *core.GrainExecutor, dockID uint, chRet chan c
 				break
 			}
 		}
-		for { // drain until this dock is removed from the list
-			select {
-			case <-chRet:
-			case <-chDone:
-				return
-			}
-		}
+		for range chRet {
+		} // drain
 	}()
 
 	go func() { // buffer exceptions
