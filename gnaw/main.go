@@ -186,10 +186,9 @@ func run(ctx context.Context) {
 		var dc uint
 		select {
 		case dc = <-docksAvail:
-		default:
-			log.Error().Uint("MAX_DOCKS", MAX_DOCKS).Msg("Number of RemoteExers reach maximum, reject a connection")
+		case <-ctx.Done():
 			_ = conn.Close()
-			continue
+			return
 		}
 		idleTimer.Stop()
 		chDock := make(chan core.ResultMsg)
