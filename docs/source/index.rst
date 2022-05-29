@@ -31,7 +31,6 @@ commit messages provide better information for the features and fixes)
 Work in progress:
 
 * Resource: a language for coordination
-* Advanced usage
 * FAQ
 * Low-level API reference
 

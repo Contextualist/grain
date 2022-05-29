@@ -81,6 +81,9 @@ func (s *Strawman) loop(ctx context.Context) {
 					}
 				}
 			}
+			if newN > s.n {
+				quota += float64(newN - s.n)
+			}
 			s.n = newN
 		case <-ctx.Done():
 			return
