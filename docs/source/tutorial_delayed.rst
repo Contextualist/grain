@@ -337,7 +337,7 @@ time, you can always check the workers' resource availability by
    grain ls
 
 Try changing the code with different resources assign to the jobs, add delays in the jobs using
-```trio.sleep``, and try to see if you can make the jobs running on different computation nodes.
+``trio.sleep``, and try to see if you can make the jobs running on different computation nodes.
 
 .. note::
 

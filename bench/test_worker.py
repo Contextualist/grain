@@ -55,6 +55,7 @@ async def test_remoteexer(benchmark, gt):
             _n.cancel_scope.cancel()
     if gt == "go":
         await trio.run_process(["pkill", "gnaw"])
+        await trio.sleep(1)
 
 def test_delayed_re(benchmark):
     async def _main():

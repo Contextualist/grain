@@ -117,8 +117,3 @@ def test_multiresource():
     # dealloc
     r.dealloc(a)
     assert len(r.c)==r.N==6 and r.m==r.M==16
-
-def test_res2link0():
-    assert res2link0(Cores([5,7,8]) & Memory(16)) == "%CPU=5,7,8\n%Mem=16GB\n"
-    assert res2link0(Memory(16)) == "%Mem=16GB\n"
-    assert res2link0(ZERO) == ""

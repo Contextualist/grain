@@ -54,7 +54,9 @@ async def stat_logger(span):
     async def _loop():
         while True:
             await trio.sleep(span*60)
-            logger.info(tally(span))
+            s = tally(span)
+            if s:
+                logger.info(s)
     async with trio.open_nursery() as _n:
         _n.start_soon(_loop)
         try:

@@ -1,7 +1,7 @@
 __all__ = ["Resource", "ZERO", "Cores", "Memory", "Node", "WTime", "Token", "Capacity",
-           "ONE_INSTANCE", "Reject", "REJECT", "res2link0"]
+           "ONE_INSTANCE", "Reject", "REJECT"]
 
-class Resource(object):
+class Resource:
     def _request(self, res):
         """Return true if it is possible to alloc(res)
         """
@@ -80,7 +80,7 @@ class Resource(object):
 
 
 ZERO = Resource(init=False)
-        
+
 
 class Cores(Resource): # CPU cores
 
@@ -268,9 +268,3 @@ class Reject(Resource):
 
 REJECT = Reject()
 
-
-def res2link0(res):
-    s = ""
-    if getattr(res, 'c', set()): s += f"%CPU={','.join(map(str,sorted(res.c)))}\n"
-    if getattr(res, 'm', 0):     s += f"%Mem={res.m}GB\n"
-    return s
