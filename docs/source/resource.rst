@@ -31,9 +31,9 @@ In your Python program, create resource instances for tasklets you are going to 
     (dfn @ Memory(8))(...)
 
 Resource request can contain multiple kinds of resources. Use ``&`` operator to combine
-them (e.g. ``Node(1,8) & WTime(600)``). The allocated resource object will have the
-attributes from each resource. Note that you cannot combine two resource of the same kind 
-(e.g ``Memory(2) & Memory(8)`` is invalid).
+them (e.g. ``Node(N=1,M=8) & WTime(group='g1')``). The allocated resource object will have
+the attributes from each resource. Note that you cannot combine two resource of the same
+kind (e.g ``Memory(2) & Memory(8)`` is invalid).
 
 For a running tasklet, allocated resource can be accessed through `context variable
 <https://trio.readthedocs.io/en/stable/reference-core.html#task-local-storage>`__
@@ -79,8 +79,14 @@ A convenient function for ``Cores(N) & Memory(M)``.
 
 Walltime limit for a tasklet or a worker. ``T``: `int` (in seconds) or `str` in format
 ``[d]-hh:mm:ss``, representing a hard time limit. ``softT``: `int`, soft time limit. If
-unset, default to the same value as the hard time limit. ``countdown``: False for requested
-and allocated resources; true for resource providers (i.e. workers).
+unset, default to the same value as the hard time limit.
+``countdown``: default to false for requested and allocated resources; true for resource
+providers (i.e. workers).
+
+``group``: `str`, this provides an automatic time limit definition alternative: soft and
+hard time limits for each tagged group are estimated based on the first few runs.
+Current strategy: for each group, based on first 8 tasklet runs, set T = mean + 5 stdev,
+softT = mean + 2 stdev; runs that take <= 10s are not counted.
 
 A tasklet can run on a worker when the tasklet's soft time limit is satisfied by the worker.
 When run time of a tasklet exceeds the tasklet's hard time limit, the run fails with exception

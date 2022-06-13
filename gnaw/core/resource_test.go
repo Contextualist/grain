@@ -46,13 +46,13 @@ func TestCores(t *testing.T) {
 }
 
 func TestWTime(t *testing.T) {
-	assertEq(t, WTime(7000, 0, false).String(), "Walltime(01:56:40)")
-	assertEq(t, WTime(7000, 0, true).String(), "Walltime(01:56:39)")
+	assertEq(t, WTime(7000, 0, "", false).String(), "Walltime(01:56:40)")
+	assertEq(t, WTime(7000, 0, "", true).String(), "Walltime(01:56:39)")
 
-	t0 := WTime(30, 0, true)
-	_, ok := t0.Alloc(WTime(31, 0, false))
+	t0 := WTime(30, 0, "", true)
+	_, ok := t0.Alloc(WTime(31, 0, "", false))
 	assertEq(t, ok, false)
-	a, ok := t0.Alloc(WTime(3, 0, false))
+	a, ok := t0.Alloc(WTime(3, 0, "", false))
 	assertEq(t, ok, true)
 	assertEq(t, a.String(), "Walltime(00:00:03)")
 }
@@ -65,7 +65,7 @@ func TestMultiResource(t *testing.T) {
 	assertEq(t, ok, false)
 	_, ok = r.Alloc(And(Cores(uint(3)), Memory(17)))
 	assertEq(t, ok, false)
-	_, ok = r.Alloc(And(Cores(uint(3)), Memory(9), WTime(0, 0, false)))
+	_, ok = r.Alloc(And(Cores(uint(3)), Memory(9), WTime(0, 0, "", false)))
 	assertEq(t, ok, false)
 	a, ok := r.Alloc(And(Cores(uint(3)), Memory(9)))
 	assertEq(t, ok, true)

@@ -573,45 +573,10 @@ func (z *PossibleRes) DecodeMsg(dc *msgp.Reader) (err error) {
 				if z.WTime == nil {
 					z.WTime = new(WTimeMsg)
 				}
-				var zb0005 uint32
-				zb0005, err = dc.ReadMapHeader()
+				err = z.WTime.DecodeMsg(dc)
 				if err != nil {
 					err = msgp.WrapError(err, "WTime")
 					return
-				}
-				for zb0005 > 0 {
-					zb0005--
-					field, err = dc.ReadMapKeyPtr()
-					if err != nil {
-						err = msgp.WrapError(err, "WTime")
-						return
-					}
-					switch msgp.UnsafeString(field) {
-					case "T":
-						z.WTime.T, err = dc.ReadUint64()
-						if err != nil {
-							err = msgp.WrapError(err, "WTime", "T")
-							return
-						}
-					case "softT":
-						z.WTime.SoftT, err = dc.ReadUint64()
-						if err != nil {
-							err = msgp.WrapError(err, "WTime", "SoftT")
-							return
-						}
-					case "countdown":
-						z.WTime.Countdown, err = dc.ReadBool()
-						if err != nil {
-							err = msgp.WrapError(err, "WTime", "Countdown")
-							return
-						}
-					default:
-						err = dc.Skip()
-						if err != nil {
-							err = msgp.WrapError(err, "WTime")
-							return
-						}
-					}
 				}
 			}
 		default:
@@ -719,35 +684,9 @@ func (z *PossibleRes) EncodeMsg(en *msgp.Writer) (err error) {
 				return
 			}
 		} else {
-			// map header, size 3
-			// write "T"
-			err = en.Append(0x83, 0xa1, 0x54)
+			err = z.WTime.EncodeMsg(en)
 			if err != nil {
-				return
-			}
-			err = en.WriteUint64(z.WTime.T)
-			if err != nil {
-				err = msgp.WrapError(err, "WTime", "T")
-				return
-			}
-			// write "softT"
-			err = en.Append(0xa5, 0x73, 0x6f, 0x66, 0x74, 0x54)
-			if err != nil {
-				return
-			}
-			err = en.WriteUint64(z.WTime.SoftT)
-			if err != nil {
-				err = msgp.WrapError(err, "WTime", "SoftT")
-				return
-			}
-			// write "countdown"
-			err = en.Append(0xa9, 0x63, 0x6f, 0x75, 0x6e, 0x74, 0x64, 0x6f, 0x77, 0x6e)
-			if err != nil {
-				return
-			}
-			err = en.WriteBool(z.WTime.Countdown)
-			if err != nil {
-				err = msgp.WrapError(err, "WTime", "Countdown")
+				err = msgp.WrapError(err, "WTime")
 				return
 			}
 		}
@@ -811,16 +750,11 @@ func (z *PossibleRes) MarshalMsg(b []byte) (o []byte, err error) {
 		if z.WTime == nil {
 			o = msgp.AppendNil(o)
 		} else {
-			// map header, size 3
-			// string "T"
-			o = append(o, 0x83, 0xa1, 0x54)
-			o = msgp.AppendUint64(o, z.WTime.T)
-			// string "softT"
-			o = append(o, 0xa5, 0x73, 0x6f, 0x66, 0x74, 0x54)
-			o = msgp.AppendUint64(o, z.WTime.SoftT)
-			// string "countdown"
-			o = append(o, 0xa9, 0x63, 0x6f, 0x75, 0x6e, 0x74, 0x64, 0x6f, 0x77, 0x6e)
-			o = msgp.AppendBool(o, z.WTime.Countdown)
+			o, err = z.WTime.MarshalMsg(o)
+			if err != nil {
+				err = msgp.WrapError(err, "WTime")
+				return
+			}
 		}
 	}
 	return
@@ -952,45 +886,10 @@ func (z *PossibleRes) UnmarshalMsg(bts []byte) (o []byte, err error) {
 				if z.WTime == nil {
 					z.WTime = new(WTimeMsg)
 				}
-				var zb0005 uint32
-				zb0005, bts, err = msgp.ReadMapHeaderBytes(bts)
+				bts, err = z.WTime.UnmarshalMsg(bts)
 				if err != nil {
 					err = msgp.WrapError(err, "WTime")
 					return
-				}
-				for zb0005 > 0 {
-					zb0005--
-					field, bts, err = msgp.ReadMapKeyZC(bts)
-					if err != nil {
-						err = msgp.WrapError(err, "WTime")
-						return
-					}
-					switch msgp.UnsafeString(field) {
-					case "T":
-						z.WTime.T, bts, err = msgp.ReadUint64Bytes(bts)
-						if err != nil {
-							err = msgp.WrapError(err, "WTime", "T")
-							return
-						}
-					case "softT":
-						z.WTime.SoftT, bts, err = msgp.ReadUint64Bytes(bts)
-						if err != nil {
-							err = msgp.WrapError(err, "WTime", "SoftT")
-							return
-						}
-					case "countdown":
-						z.WTime.Countdown, bts, err = msgp.ReadBoolBytes(bts)
-						if err != nil {
-							err = msgp.WrapError(err, "WTime", "Countdown")
-							return
-						}
-					default:
-						bts, err = msgp.Skip(bts)
-						if err != nil {
-							err = msgp.WrapError(err, "WTime")
-							return
-						}
-					}
 				}
 			}
 		default:
@@ -1023,7 +922,7 @@ func (z *PossibleRes) Msgsize() (s int) {
 	if z.WTime == nil {
 		s += msgp.NilSize
 	} else {
-		s += 1 + 2 + msgp.Uint64Size + 6 + msgp.Uint64Size + 10 + msgp.BoolSize
+		s += z.WTime.Msgsize()
 	}
 	return
 }
@@ -1215,6 +1114,12 @@ func (z *WTimeMsg) DecodeMsg(dc *msgp.Reader) (err error) {
 				err = msgp.WrapError(err, "SoftT")
 				return
 			}
+		case "group":
+			z.Group, err = dc.ReadString()
+			if err != nil {
+				err = msgp.WrapError(err, "Group")
+				return
+			}
 		case "countdown":
 			z.Countdown, err = dc.ReadBool()
 			if err != nil {
@@ -1233,10 +1138,10 @@ func (z *WTimeMsg) DecodeMsg(dc *msgp.Reader) (err error) {
 }
 
 // EncodeMsg implements msgp.Encodable
-func (z WTimeMsg) EncodeMsg(en *msgp.Writer) (err error) {
-	// map header, size 3
+func (z *WTimeMsg) EncodeMsg(en *msgp.Writer) (err error) {
+	// map header, size 4
 	// write "T"
-	err = en.Append(0x83, 0xa1, 0x54)
+	err = en.Append(0x84, 0xa1, 0x54)
 	if err != nil {
 		return
 	}
@@ -1255,6 +1160,16 @@ func (z WTimeMsg) EncodeMsg(en *msgp.Writer) (err error) {
 		err = msgp.WrapError(err, "SoftT")
 		return
 	}
+	// write "group"
+	err = en.Append(0xa5, 0x67, 0x72, 0x6f, 0x75, 0x70)
+	if err != nil {
+		return
+	}
+	err = en.WriteString(z.Group)
+	if err != nil {
+		err = msgp.WrapError(err, "Group")
+		return
+	}
 	// write "countdown"
 	err = en.Append(0xa9, 0x63, 0x6f, 0x75, 0x6e, 0x74, 0x64, 0x6f, 0x77, 0x6e)
 	if err != nil {
@@ -1269,15 +1184,18 @@ func (z WTimeMsg) EncodeMsg(en *msgp.Writer) (err error) {
 }
 
 // MarshalMsg implements msgp.Marshaler
-func (z WTimeMsg) MarshalMsg(b []byte) (o []byte, err error) {
+func (z *WTimeMsg) MarshalMsg(b []byte) (o []byte, err error) {
 	o = msgp.Require(b, z.Msgsize())
-	// map header, size 3
+	// map header, size 4
 	// string "T"
-	o = append(o, 0x83, 0xa1, 0x54)
+	o = append(o, 0x84, 0xa1, 0x54)
 	o = msgp.AppendUint64(o, z.T)
 	// string "softT"
 	o = append(o, 0xa5, 0x73, 0x6f, 0x66, 0x74, 0x54)
 	o = msgp.AppendUint64(o, z.SoftT)
+	// string "group"
+	o = append(o, 0xa5, 0x67, 0x72, 0x6f, 0x75, 0x70)
+	o = msgp.AppendString(o, z.Group)
 	// string "countdown"
 	o = append(o, 0xa9, 0x63, 0x6f, 0x75, 0x6e, 0x74, 0x64, 0x6f, 0x77, 0x6e)
 	o = msgp.AppendBool(o, z.Countdown)
@@ -1314,6 +1232,12 @@ func (z *WTimeMsg) UnmarshalMsg(bts []byte) (o []byte, err error) {
 				err = msgp.WrapError(err, "SoftT")
 				return
 			}
+		case "group":
+			z.Group, bts, err = msgp.ReadStringBytes(bts)
+			if err != nil {
+				err = msgp.WrapError(err, "Group")
+				return
+			}
 		case "countdown":
 			z.Countdown, bts, err = msgp.ReadBoolBytes(bts)
 			if err != nil {
@@ -1333,7 +1257,7 @@ func (z *WTimeMsg) UnmarshalMsg(bts []byte) (o []byte, err error) {
 }
 
 // Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
-func (z WTimeMsg) Msgsize() (s int) {
-	s = 1 + 2 + msgp.Uint64Size + 6 + msgp.Uint64Size + 10 + msgp.BoolSize
+func (z *WTimeMsg) Msgsize() (s int) {
+	s = 1 + 2 + msgp.Uint64Size + 6 + msgp.Uint64Size + 6 + msgp.StringPrefixSize + len(z.Group) + 10 + msgp.BoolSize
 	return
 }

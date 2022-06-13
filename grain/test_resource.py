@@ -53,16 +53,25 @@ def test_walltime(monkeypatch):
     monkeypatch.setattr(time, "time", lambda: now) # mock timestamp
     # repr
     now = 0.0
-    t0, t1, t2 = WTime("1:56:40"), WTime(7000), WTime(7000, countdown=True)
+    t0, t1, t2 = WTime(T="1:56:40"), WTime(T=7000), WTime(T=7000, countdown=True)
     now += 2.0
     assert str(t0)==str(t1)=="Walltime(01:56:40)" and str(t2)=="Walltime(01:56:38)"
     # request, alloc
     now = 0.0
-    t2 = WTime(30, countdown=True)
-    assert t2.request(WTime(30))
+    t2 = WTime(T=30, countdown=True)
+    assert t2.request(WTime(T=30))
     now += 2.0
-    assert t2.request(WTime(29)) is False
-    assert t2.alloc(WTime(3)).T == 3
+    assert t2.request(WTime(T=29)) is False
+    assert t2.alloc(WTime(T=3)).T == 3
+    # group
+    from .resource import TIMESTAT_NSAMPLE
+    now = 0.0
+    t3, t4 = WTime(T=7000, countdown=True), WTime(group='tag')
+    a = [t3.alloc(t4) for _ in range(TIMESTAT_NSAMPLE)]
+    now += 12.0
+    [t3.dealloc(x) for x in a]
+    infr = t3.alloc(t4)
+    assert infr.T == infr.softT == 12.0
 
 def test_token():
     # repr
@@ -110,7 +119,7 @@ def test_multiresource():
     with pytest.raises(ValueError, match="cannot allocate"):
         r.alloc(Cores(3) & Memory(17))
     with pytest.raises(ValueError, match="does not have the same shape"):
-        r.alloc(WTime(3))
+        r.alloc(WTime(T=3))
     a = r.alloc(Cores(3) & Memory(8))
     assert len(a.c)==3 and a.m==8 and len(a.c|r.c)==6 and a.m+r.m==16
     assert r.request(Cores(3) & Memory(9)) is False

@@ -5,10 +5,13 @@ from trio import TooSlowError
 import os
 import signal
 import argparse
+from math import isinf
 
 def exerf(GVAR, func):
     globals()['GVAR'] = GVAR # for func's convenience
     timeout = getattr(GVAR.res, 'T', 0)
+    if isinf(timeout):
+        timeout = 0
     if timeout:
         signal.signal(signal.SIGALRM, raise_timeout)
         signal.alarm(timeout)

@@ -31,6 +31,7 @@ type (
 	WTimeMsg struct {
 		T         uint64
 		SoftT     uint64 `msg:"softT"`
+		Group     string `msg:"group"`
 		Countdown bool   `msg:"countdown"`
 	}
 )
@@ -44,7 +45,7 @@ func ResFromMsg(rmsg *PossibleRes) Resource {
 		rm["Memory"] = Memory(rmsg.Memory.M)
 	}
 	if rmsg.WTime != nil {
-		rm["WTime"] = WTime(rmsg.WTime.T, rmsg.WTime.SoftT, rmsg.WTime.Countdown)
+		rm["WTime"] = WTime(rmsg.WTime.T, rmsg.WTime.SoftT, rmsg.WTime.Group, rmsg.WTime.Countdown)
 	}
 	return &multiResource{rm}
 }

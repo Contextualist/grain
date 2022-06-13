@@ -5,6 +5,7 @@ package core
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -103,12 +104,24 @@ func (c *cores) Name() string {
 	return "Cores"
 }
 
+const (
+	TIMESTAT_NSAMPLE = 8
+	MAXDURATION      = 100 * 365 * 24 * time.Hour
+)
+
+var (
+	// NOTE: currently assuming single-thread access, so no lock
+	timestat = make(map[string][]float64)
+	timeinfr = make(map[string]*wtime)
+)
+
 type wtime struct {
 	t, softT time.Duration
+	group      string
 	deadline time.Time
 }
 
-func WTime(t, softT uint64, countdown bool) *wtime {
+func WTime(t, softT uint64, group string, countdown bool) *wtime {
 	if softT == 0 {
 		softT = t
 	}
@@ -117,19 +130,51 @@ func WTime(t, softT uint64, countdown bool) *wtime {
 	if countdown {
 		dl = time.Now().Add(t_)
 	}
-	return &wtime{t_, st_, dl}
+	return &wtime{t_, st_, group, dl}
 }
 func (t *wtime) Alloc(r Resource) (Resource, bool) {
 	rt, ok := r.(*wtime)
-	if !ok || time.Until(t.deadline) < rt.softT {
+	if !ok {
+		return nil, false
+	}
+	if group := rt.group; group != "" {
+		rt, ok = timeinfr[group]
+		if !ok { // record current time for sampling
+			return &wtime{MAXDURATION, MAXDURATION, group, time.Now()}, true
+		}
+	}
+	if time.Until(t.deadline) < rt.softT {
 		return nil, false
 	}
 	return rt, true
 }
 func (t *wtime) Dealloc(r Resource) {
+	rt, ok := r.(*wtime)
+	if !ok || rt.group == "" || timeinfr[rt.group] != nil {
+		return
+	}
+	delt := time.Since(rt.deadline)
+	if delt < 10*time.Second {
+		// 1. A rewind in multiresource alloc attempt is almost instant
+		// 2. Could be a premature end due to an early fatal error
+		// 3. Timeout is less useful for short jobs
+		return
+	}
+	timestat[rt.group] = append(timestat[rt.group], delt.Seconds())
+	if len(timestat[rt.group]) == TIMESTAT_NSAMPLE {
+		tm, ts := mean_std(timestat[rt.group])
+		timeinfr[rt.group] = &wtime{t: time.Duration(tm+5*ts) * time.Second, softT: time.Duration(tm+2*ts) * time.Second}
+		delete(timestat, rt.group)
+	}
 }
 func (t *wtime) String() string {
 	var d uint64
+	if t.group != "" {
+		if t_, ok := timeinfr[t.group]; ok {
+			return t_.String()
+		}
+		return fmt.Sprintf("Walltime(group=%s)", t.group)
+	}
 	if t.deadline.IsZero() {
 		d = uint64(t.t.Seconds())
 	} else {
@@ -139,6 +184,17 @@ func (t *wtime) String() string {
 }
 func (t *wtime) Name() string {
 	return "WTime"
+}
+func mean_std(s []float64) (float64, float64) {
+	var m, v float64
+	for _, x := range s {
+		m += x
+	}
+	m /= float64(len(s))
+	for _, x := range s {
+		v += (x - m) * (x - m)
+	}
+	return m, math.Sqrt(v / float64((len(s) - 1)))
 }
 
 type multiResource struct {

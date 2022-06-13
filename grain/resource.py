@@ -1,3 +1,8 @@
+import time
+from collections import defaultdict
+from math import inf as INFIN
+from statistics import fmean as mean, stdev
+
 __all__ = ["Resource", "ZERO", "Cores", "Memory", "Node", "WTime", "Token", "Capacity",
            "ONE_INSTANCE", "Reject", "REJECT"]
 
@@ -156,40 +161,69 @@ def Node(N, M):
     return Cores(N) & Memory(M)
 
 
-import time
+TIMESTAT_NSAMPLE = 8
+TIMESTAT = defaultdict(list)
+TIMEINFR = {}
 class WTime(Resource): # walltime, not restorable
 
-    def __init__(self, T, softT=None, countdown=False): # countdown ? allocer : requester
+    def __init__(self, *, T=None, softT=None, group=None, countdown=False): # countdown ? allocer : requester
         super().__init__()
         if isinstance(T, str):
             *d, h, m, s = map(int, T.replace('-',':').split(':'))
             T = 86400*(d or [0])[-1] + 3600*h + 60*m + s
+        elif isinstance(T, int) and T > 10*365*86400:
+            T = INFIN
         self.deadline = time.time() + T if countdown else 0
         self.T = T
         self.softT = softT or T
+        self.group = group
     def _repr(self):
-        t = max(int(self.deadline - time.time()), 0) if self.deadline else self.T
+        if self.group:
+            if self.group not in TIMEINFR:
+                return f"Walltime(group={self.group})"
+            t = TIMEINFR[self.group].T
+        else:
+            t = max(int(self.deadline - time.time()), 0) if self.deadline else self.T
         return f"Walltime({t//3600:02}:{t%3600//60:02}:{t%60:02})"
 
-    def _request(self, res): # loose condition
-        return self.deadline - time.time() >= res.softT
+    def _request(self, res):
+        if res.group:
+            if res.group not in TIMEINFR:
+                return True
+            res = TIMEINFR[res.group]
+        return self.deadline - time.time() >= res.softT # loose condition
 
     def _alloc(self, res):
         if not self._request(res):
             raise ValueError(f"{self} cannot allocate {res}")
+        if res.group:
+            if res.group in TIMEINFR:
+                return TIMEINFR[res.group]
+            res = WTime(T=0, group=res.group, countdown=True) # store current time
+            res.T = INFIN # ... while set no time limit
         return res
 
     def _dealloc(self, res):
-        pass
+        if res.group and res.group not in TIMEINFR:
+            if (delt := time.time() - res.deadline) < 10:
+                return
+            (s := TIMESTAT[res.group]).append(delt)
+            if len(s) == TIMESTAT_NSAMPLE:
+                tm = mean(s)
+                ts = stdev(s, tm)
+                TIMEINFR[res.group] = WTime(T=round(tm+5*ts), softT=round(tm+2*ts))
+                del TIMESTAT[res.group]
 
     def _stat(self):
         return 1, 1
 
     def _encode_msgp(self):
+        if self.group:
+            return dict(group=self.group)
         if self.deadline:
             return dict(T=int(self.deadline-time.time()), countdown=True)
         else:
-            return dict(T=int(self.T), softT=int(self.softT), countdown=False)
+            return dict(T=int(self.T), softT=int(self.softT))
 
 
 class Token(Resource):
