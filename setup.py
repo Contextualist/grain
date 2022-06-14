@@ -31,7 +31,6 @@ setuptools.setup(
     name="grain-scheduler",
     version=__version__,
     author="Harry Zhang",
-    author_email="zhanghar@iu.edu",
     description="A scheduler for resource-aware parallel computing on clusters.",
     long_description=long_description,
     long_description_content_type="text/markdown",

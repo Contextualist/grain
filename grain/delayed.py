@@ -337,8 +337,12 @@ async def boot(subtasks, args, kwargs):
     from .delayed import relay # no global dependency
     from .util import open_ordered_nursery
     from collections.abc import Iterable
+    if (local := kwargs.pop('local', None)) is not None:
+        kwargs['rpw'] = local
     config = load_conf(kwargs.pop('config_file', None), 'head')
-    Exer = RemoteExecutor if config.gnaw.enabled or 'gnaw' in kwargs else GrainExecutor
+    Exer = RemoteExecutor
+    if local or not config.gnaw.enabled:
+        Exer = GrainExecutor
     async with trio.open_nursery() as _n, \
                Exer(_n=_n, config=config, *args, **kwargs) as exer:
         rch = {}
@@ -354,33 +358,24 @@ async def boot(subtasks, args, kwargs):
 
 def run(subtasks, *args, **kwargs):
     """Delayed's main entry point. Start your "root" async function(s) here.
-    Except for the first arg, all the other args are optional and are passed
-    to :class:`grain.head.GrainExecutor`.
+    Except for the first two args, all the other args are optional and are passed
+    to :class:`grain.remote_exer.RemoteExecutor` (or to :class:`grain.head.GrainExecutor`
+    if ``local`` is set or Gnaw is disabled in the config).
+    Common options are listed below, for more options (usually for internal debug),
+    see the executors.
 
     Args:
       subtasks: Root async function(s) that spawns all the other calculations.
         This could be an async function or an iterable of async functions. If
         an iterable is passed, all functions are run concurrently.
-      waddrs (Iterable[str]): List of passive workers' addresses to connect.
-      rpw (~grain.resource.Resource): Resource per worker for passive workers
-        and local worker.
-      nolocal (bool): Default to False. If true, local worker's resource is set
-        to ZERO; jobs that takes resource will not run locally.
-      temporary_err (Tuple[Exception]): Exceptions that are not critical to
-        shutdown a worker.
-      reschedule (bool): Default to true. If false, abort the scheduler on any
-        exception instead of resubmitting the failed tasklet.
-      persistent (bool): Default to true. If false, abort the scheduler whenever
-        a worker quits prematurely.
-      config_file (Union[str, False, None]): Grain's config file name. If not set or None,
-        Grain will use the name provided by envar ``GRAIN_CONFIG``, and finally
-        fallback to name ``grain.toml``. If set to False, Grain will use the
-        default profile (see ``config.py``).
-      stat_tag (Callable[~grain.resource.Resource, str]): Define how time statistics
-        is categorized by resource. Jobs with resource that maps to the same
-        str are grouped together.
-      gnaw (Optional[str]): If set, connect to the Gnaw executor with address
-        ``gnaw``, ignoring ``head.gnaw`` in the config.
+      local (Optional[~grain.resource.Resource]): Resource for local worker.
+        Default to None (Gnaw executor has no local worker). If set, the built-in
+        :class:`grain.head.GrainExecutor` will be used.
+      config_file (str | Literal[False] | None): Grain's config file name. If
+        not set or None, Grain will use the name provided by envar ``GRAIN_CONFIG``,
+        and finally fallback to name ``grain.toml``. If set to False, Grain will
+        use the default profile (see ``config.py``).
+      name (str): For Gnaw executor only. Name to be recognized in the Gnaw's log
       prioritized (bool): Default to False. For Gnaw executor only. If true,
         submit tasks to the prioritized queue.
     """

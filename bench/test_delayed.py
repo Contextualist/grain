@@ -38,5 +38,5 @@ def test_delayed(benchmark, main):
     run(
         partial(_main, main, benchmark),
         config_file=False,
-        rpw=Memory(0),
+        local=Memory(0),
     )

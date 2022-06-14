@@ -47,7 +47,7 @@ async def test_remoteexer(benchmark, gt):
             _n.start_soon(_gnaw_py)
             await trio.sleep(3) # wait for gnaw to start
         gopts = dict(gnaw="tcp://localhost:4238") if gt == "py" else {}
-        async with RemoteExecutor(_n=_n, nolocal=True, config=CONFIG, **gopts, name="a-p") as exer:
+        async with RemoteExecutor(_n=_n, config=CONFIG, **gopts, name="a-p") as exer:
             _n.start_soon(_worker)
             exer.submit(Memory(0), nop)
             await exer.resultq.receive() # make sure the entire pipeline is up and running
@@ -68,7 +68,7 @@ def test_delayed_re(benchmark):
             await (asyncify(benchmark))(_parallx_d)
             _n.cancel_scope.cancel()
         await trio.run_process(["pkill", "gnaw"])
-    run(_main, nolocal=True, config_file=StringIO(CONFIG_STR), name="a-p")
+    run(_main, config_file=StringIO(CONFIG_STR), name="a-p")
 
 
 async def _worker():

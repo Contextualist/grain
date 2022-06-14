@@ -17,11 +17,16 @@ logger = logging.getLogger(__name__)
 DAEMON = object()
 
 class RemoteExecutor:
-    """Pass the jobs on to an external scheduler"""
-    def __init__(self, _n=None, nolocal=False, config=None, gnaw=DAEMON, name="", prioritized=False, **kwargs):
+    """Pass the jobs on to an external scheduler
+
+    Args:
+      gnaw (Optional[str]): If set, connect to the Gnaw executor with address
+        ``gnaw``, ignoring ``head.gnaw`` in the config. By default, the Gnaw
+        executor is a managed daemon process.
+    """
+    def __init__(self, _n=None, config=None, gnaw=DAEMON, name="", prioritized=False, **kwargs):
         if kwargs:
             logger.warning(f"kwargs {kwargs} are ignored")
-        assert nolocal, "RemoteExecutor has no local worker, as scheduling is delegated"
         self.gnaw = gnaw
         self.name = name + ("-p" if prioritized else "")
         self.push_job, self.pull_job = trio.open_memory_channel(INFIN)
