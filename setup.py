@@ -9,7 +9,7 @@ class _build(build):
         from subprocess import run as cmd
         cmd(
             "go mod download; "
-            "CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOAMD64=v3 "
+            "CGO_ENABLED=0 GOOS=linux GOARCH=amd64 "
                 f"go build -ldflags '-s -w -X main.VERSION={__version__}' -trimpath -o ../grain/gnaw",
             shell=True, check=True, cwd="gnaw/"
         )
