@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 from .contextvar import GVAR
-from . import resource
+from .resource import Resource
 from .pair import notify, SocketChannel
 from .util import pickle_dumps, pickle_loads, load_contextmod, nullacontext
 
@@ -101,10 +101,7 @@ async def __loop():
 
 def parse_res(res_str):
     res_dict = json.loads(res_str.replace('\\n', '\n'))
-    RES = resource.ZERO
-    for rn, rargs in res_dict.items():
-        RES &= getattr(resource, rn)(**rargs)
-    return RES
+    return Resource.from_dict(res_dict)
 
 async def anop(*_): pass
 

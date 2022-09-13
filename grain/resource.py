@@ -82,6 +82,14 @@ class Resource:
     def encode_msgp(self):
         return {k:v._encode_msgp() for k,v in self.__resm.items()}
 
+    @classmethod
+    def from_dict(cls, resd):
+        from . import resource
+        res = cls(init=False)
+        for rn, rargs in resd.items():
+            res &= getattr(resource, rn)(**rargs)
+        return res
+
 
 
 ZERO = Resource(init=False)
