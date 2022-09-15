@@ -69,11 +69,7 @@ def test_local_redirectouterr(capsys):
 
 class MockRemote(GrainPseudoRemote):
     def __init__(self, name):
-        self.res = Memory(1)
-        self.name = name
-        self.health = FULL_HEALTH
-        self.wg = WaitGroup()
-        self.cg = set()
+        super().__init__(name, Memory(1))
     async def connect(self, _n):
         pass
 

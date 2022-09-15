@@ -56,11 +56,12 @@ class Head(Config):
 
 @define
 class Worker(Config):
-    name:     str = "w{{HHMMSS}}"
-    log_file: str = "w{{HHMMSS}}.log"
-    dial:     str = "UNSET"
-    cli_dial: str = ""
-    res:      Dict[str, Any] = Factory(dict)
+    specialized_type: str = ""
+    name:             str = "w{{HHMMSS}}"
+    log_file:         str = "w{{HHMMSS}}.log"
+    dial:             str = "UNSET"
+    cli_dial:         str = ""
+    res:              Dict[str, Any] = Factory(dict)
     def __attrs_post_init__(self):
         if self.dial == "UNSET":
             raise ValueError("Config `worker.dial` is not set")
@@ -107,3 +108,9 @@ def load_conf(config=None, mode: Literal['', 'head', 'worker']=''):
         worker=cattr.structure(ChainMapNested(conf['worker'], conf), Worker),
         head=cattr.structure(ChainMapNested(conf['head'], conf), Head),
     )
+
+def load_conf_sworker(config=None):
+    conf = load_conf(config, 'worker')
+    if conf.specialized_type:
+        return [conf]
+    return []

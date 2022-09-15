@@ -333,16 +333,19 @@ async def boot(subtasks, args, kwargs):
     global exer, _gn, rch
     from .head import GrainExecutor
     from .remote_exer import RemoteExecutor
-    from .config import load_conf
+    from .config import load_conf, load_conf_sworker
     from .delayed import relay # no global dependency
     from .util import open_ordered_nursery
     from collections.abc import Iterable
     if (local := kwargs.pop('local', None)) is not None:
         kwargs['rpw'] = local
-    config = load_conf(kwargs.pop('config_file', None), 'head')
+    config_file = kwargs.pop('config_file', None)
+    config = load_conf(config_file, 'head')
+    sworker_config = load_conf_sworker(config_file)
     Exer = RemoteExecutor
-    if local or not config.gnaw.enabled:
+    if local or not config.gnaw.enabled or sworker_config:
         Exer = GrainExecutor
+        kwargs['sworker_config'] = sworker_config
     async with trio.open_nursery() as _n, \
                Exer(_n=_n, config=config, *args, **kwargs) as exer:
         rch = {}

@@ -11,8 +11,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 from .contextvar import GVAR
-from .util import timeblock, pickle_dumps, pickle_loads, WaitGroup, nullacontext, optional_cm, make_prependable, load_contextmod
-from .resource import ZERO, Reject
+from .util import timeblock, pickle_dumps, pickle_loads, WaitGroup, nullacontext, optional_cm, make_prependable, load_contextmod, load_mod, as_daemon
+from .resource import Resource, ZERO, Reject
 from .pair import SocketChannel, SocketChannelAcceptor
 from .subproc import subprocess_pool_daemon, BrokenSubprocessError
 from .stat import log_event, log_timestart, log_timeend, stat_logger, ls_worker_res, reg_probe, collect_probe
@@ -108,13 +108,13 @@ class _cobj:
     def __init__(self, fobj, dobj):
         self._h, self._dh = fobj, dobj
     def __getattr__(self, attr):
-        if GVAR.instance == "local":
+        if GVAR.instance.endswith("(local)"):
             return getattr(self._h, attr)
         return getattr(self._dh, attr)
 class GrainPseudoRemote:
-    def __init__(self, res, out="", cmod=""):
+    def __init__(self, name, res, out="", cmod=nullacontext()):
         self.res = res
-        self.name = f"{trio.socket.gethostname()}(local)"
+        self.name = name
         self.health = FULL_HEALTH
         self.wg = WaitGroup()
         self.cg = set()
@@ -124,11 +124,12 @@ class GrainPseudoRemote:
             self.redi_cm.enter_context(redirect_stdout(_cobj(outh,sys.stdout)))
             self.redi_cm.enter_context(redirect_stderr(_cobj(outh,sys.stderr)))
         self.cmod = cmod
+        self.cmod_context = None
     async def _scope(self, task_status=trio.TASK_STATUS_IGNORED):
         with trio.CancelScope() as cs, \
              self.redi_cm:
             self.cg.add(cs)
-            async with load_contextmod(self.cmod)():
+            async with self.cmod as self.cmod_context:
                 task_status.started()
                 await trio.sleep_forever()
     async def connect(self, _n):
@@ -138,7 +139,8 @@ class GrainPseudoRemote:
              trio.CancelScope() as cs:
             self.cg.add(cs)
             GVAR.res = res
-            GVAR.instance = "local"
+            GVAR.instance = self.name
+            GVAR.context = self.cmod_context
             try:
                 with optional_cm(trio.fail_after, getattr(res,'T',0)):
                     ok, r = True, await fn()
@@ -154,16 +156,35 @@ class GrainPseudoRemote:
         await self.wg.wait()
         logger.info(f"worker {self.name} clear")
 
+class GrainSpecializedRemote(GrainPseudoRemote):
+    # TODO: heartbeat
+    def __init__(self, name, res, _c, sw_kwargs):
+        stype = sw_kwargs.pop("_stype")
+        sw_mod = load_mod(stype)
+        super().__init__(name, res, "", sw_mod.grain_context(**sw_kwargs))
+        self._c = _c
+    async def aclose(self):
+        for cs in self.cg:
+            cs.cancel()
+        if self._c:
+            await self._c.try_send(dict(cmd="FIN")) # fails if KI or connection lost
+        logger.info(f"worker {self.name} starts cleaning up")
+        await self.wg.wait()
+        if self._c:
+            await self._c.aclose() # for P2P connection
+        logger.info(f"worker {self.name} clear")
+
 
 class GrainManager:
     """Manage workers and resources.
     """
-    def __init__(self, pool_init, _n, temperr, persistent, listen_addr):
+    def __init__(self, pool_init, _n, temperr, persistent, listen_addr, sworker_config):
         self.pool = pool_init
         self._n = _n
         self.temperr = {*set(temperr), BrokenSubprocessError}
         self.persistent = persistent
         self.listen_addr = listen_addr
+        self.sworker_config = sworker_config
         self.cond_res = trio.Condition()
         self.soacceptor = None
 
@@ -218,7 +239,25 @@ class GrainManager:
                 w.res = Reject(w.res)
                 self._n.start_soon(_wait_n_unreg, w)
 
-    async def worker_manager(self, task_status=trio.TASK_STATUS_IGNORED):
+    async def backendless_sworker_manager(self, task_status=trio.TASK_STATUS_IGNORED):
+        registered_stype = set()
+        async with trio.open_nursery() as self.backendless_sworker_n:
+            for sw_conf in self.sworker_config:
+                stype = sw_conf.specialized_type
+                registered_stype.add(stype)
+                sw_mod = load_mod(stype)
+                if not sw_mod.GRAIN_SWORKER_CONFIG.get("BACKENDLESS", False):
+                    continue
+                sw_info = await self.backendless_sworker_n.start(as_daemon, sw_mod.grain_run_sworker())
+                res = Resource.from_dict({
+                    'Node': dict(N=sw_conf.script.cores, M=sw_conf.script.memory),
+                    'WTime': dict(T=sw_conf.script.walltime),
+                    **sw_conf.res,
+                })
+                self.pool.append(GrainSpecializedRemote(sw_info.pop("name"), res, None, dict(_stype=stype, **sw_info)))
+            task_status.started(registered_stype)
+
+    async def worker_manager(self, registered_stype, task_status=trio.TASK_STATUS_IGNORED):
         async with trio.open_nursery() as _n, \
                    SocketChannelAcceptor(self.listen_addr, _n=_n) as self.soacceptor:
             for w in self.pool:
@@ -234,6 +273,13 @@ class GrainManager:
                     vaddr, res = msg['name'], msg['res']
                     logger.info(f"worker {vaddr} joined with {res}")
                     await self.register(GrainReverseRemote(_c, vaddr, res), _n)
+                    continue
+                elif cmd == "SRG": # specialized register
+                    name, res, kwargs = msg['name'], msg['res'], pickle_loads(msg['obj'])
+                    logger.info(f"worker {name} joined with {res}")
+                    if kwargs['_stype'] not in registered_stype:
+                        raise ValueError(f"Unknown specialized worker type {kwargs['_stype']}")
+                    await self.register(GrainSpecializedRemote(name, res, _c, kwargs), _n)
                     continue
                 async with _c: # The following are ephemeral cmds
                     if cmd == "REG": # register
@@ -254,11 +300,13 @@ class GrainManager:
                         logger.warning(f"worker manager received unknown command {cmd} from {_c.host}")
 
     async def __aenter__(self):
-        await self._n.start(self.worker_manager)
+        registered_stype = await self._n.start(self.backendless_sworker_manager)
+        await self._n.start(self.worker_manager, registered_stype)
 
     async def aclose(self):
         with trio.move_on_after(10) as cleanup_scope: # 10s cleanup
             cleanup_scope.shield = True
+            self.backendless_sworker_n.cancel_scope.cancel()
             for w in self.pool:
                 await w.aclose()
             await self.soacceptor.aclose()
@@ -284,6 +332,7 @@ class GrainExecutor:
         persistent=True,  # if False, abort on any worker's exit
         config=None,      # grain's head config
         stat_tag=lambda res: str(getattr(res,'T',"")), # define how timestat is categorized by resource
+        sworker_config=(), # grain's specialized worker config
      ):
         self.push_job, self.pull_job = trio.open_memory_channel(INFIN)
         self.push_job = make_prependable(self.push_job)
@@ -294,9 +343,13 @@ class GrainExecutor:
         self._wg = WaitGroup() # track the entire lifetime of each job
         self.reschedule = reschedule
         self.mgr = GrainManager(
-            [GrainPseudoRemote(deepcopy(rpw if not nolocal else ZERO), config.log_file, config.contextmod)] + \
-            [GrainRemote(a, deepcopy(rpw)) for a in waddrs],
-            self._n, temporary_err, persistent, config.listen)
+            [GrainPseudoRemote(
+                f"{trio.socket.gethostname()}(local)",
+                deepcopy(rpw if not nolocal else ZERO),
+                config.log_file,
+                load_contextmod(config.contextmod)()
+            )] + [GrainRemote(a, deepcopy(rpw)) for a in waddrs],
+            self._n, temporary_err, persistent, config.listen, sworker_config)
         reg_probe("queued jobs", lambda: len(self.push_job._state.data))
         self.stat_tag = stat_tag
 

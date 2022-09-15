@@ -196,6 +196,14 @@ async def QueueLimiter(conc):
         yield _rl_wrapper
 
 
+async def as_daemon(actx, task_status=trio.TASK_STATUS_IGNORED):
+    """Transform an async context manager into a daemon task
+    """
+    async with actx as y:
+        task_status.started(y)
+        await trio.sleep_forever()
+
+
 class nullacontext(object):
     def __enter__(self): return self
     def __exit__(self, *exc): return False
@@ -207,14 +215,20 @@ def optional_cm(cm, cond_arg):
         return cm(cond_arg)
     return nullacontext()
 
-def load_contextmod(modp):
+def load_mod(modp):
     if modp == "":
-        return nullacontext
+        return None
+    if not modp.endswith(".py"):
+        return importlib.import_module(modp)
     p = Path(modp)
     spec = importlib.util.spec_from_file_location(p.stem, p)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    return mod.grain_context
+    return mod
+def load_contextmod(modp):
+    if modp == "":
+        return nullacontext
+    return load_mod(modp).grain_context
 
 def set_numpy_oneline_repr():
     """Change the default Numpy array ``__repr__`` to a

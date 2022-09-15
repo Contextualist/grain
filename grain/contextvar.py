@@ -3,6 +3,7 @@ from contextvars import ContextVar
 _GVAR = dict(
     res      = ContextVar("GRAIN_RESOURCE"),
     instance = ContextVar("GRAIN_INSTANCE"),
+    context  = ContextVar("GRAIN_CONTEXT"),
 )
 
 _None = object()
