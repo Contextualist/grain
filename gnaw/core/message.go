@@ -9,6 +9,7 @@ type (
 		Cmd  string       `msg:"cmd"`
 		Name *string      `msg:"name,omitempty"`
 		Res  *PossibleRes `msg:"res,omitempty"`
+		Obj  msgp.Raw     `msg:"obj,omitempty"`
 	}
 
 	FnMsg struct {
@@ -24,9 +25,10 @@ type (
 	}
 
 	PossibleRes struct {
-		Cores  *struct{ N []uint } `msg:"Cores,omitempty"`
-		Memory *struct{ M uint }   `msg:"Memory,omitempty"`
-		WTime  *WTimeMsg           `msg:"WTime,omitempty"`
+		Cores    *struct{ N []uint } `msg:"Cores,omitempty"`
+		Memory   *struct{ M uint }   `msg:"Memory,omitempty"`
+		WTime    *WTimeMsg           `msg:"WTime,omitempty"`
+		Capacity *struct{ V int }    `msg:"Capacity,omitempty"`
 	}
 	WTimeMsg struct {
 		T         uint64

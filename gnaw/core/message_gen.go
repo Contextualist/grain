@@ -66,6 +66,12 @@ func (z *ControlMsg) DecodeMsg(dc *msgp.Reader) (err error) {
 					return
 				}
 			}
+		case "obj":
+			err = z.Obj.DecodeMsg(dc)
+			if err != nil {
+				err = msgp.WrapError(err, "Obj")
+				return
+			}
 		default:
 			err = dc.Skip()
 			if err != nil {
@@ -80,8 +86,8 @@ func (z *ControlMsg) DecodeMsg(dc *msgp.Reader) (err error) {
 // EncodeMsg implements msgp.Encodable
 func (z *ControlMsg) EncodeMsg(en *msgp.Writer) (err error) {
 	// omitempty: check for empty values
-	zb0001Len := uint32(3)
-	var zb0001Mask uint8 /* 3 bits */
+	zb0001Len := uint32(4)
+	var zb0001Mask uint8 /* 4 bits */
 	if z.Name == nil {
 		zb0001Len--
 		zb0001Mask |= 0x2
@@ -146,6 +152,16 @@ func (z *ControlMsg) EncodeMsg(en *msgp.Writer) (err error) {
 			}
 		}
 	}
+	// write "obj"
+	err = en.Append(0xa3, 0x6f, 0x62, 0x6a)
+	if err != nil {
+		return
+	}
+	err = z.Obj.EncodeMsg(en)
+	if err != nil {
+		err = msgp.WrapError(err, "Obj")
+		return
+	}
 	return
 }
 
@@ -153,8 +169,8 @@ func (z *ControlMsg) EncodeMsg(en *msgp.Writer) (err error) {
 func (z *ControlMsg) MarshalMsg(b []byte) (o []byte, err error) {
 	o = msgp.Require(b, z.Msgsize())
 	// omitempty: check for empty values
-	zb0001Len := uint32(3)
-	var zb0001Mask uint8 /* 3 bits */
+	zb0001Len := uint32(4)
+	var zb0001Mask uint8 /* 4 bits */
 	if z.Name == nil {
 		zb0001Len--
 		zb0001Mask |= 0x2
@@ -192,6 +208,13 @@ func (z *ControlMsg) MarshalMsg(b []byte) (o []byte, err error) {
 				return
 			}
 		}
+	}
+	// string "obj"
+	o = append(o, 0xa3, 0x6f, 0x62, 0x6a)
+	o, err = z.Obj.MarshalMsg(o)
+	if err != nil {
+		err = msgp.WrapError(err, "Obj")
+		return
 	}
 	return
 }
@@ -254,6 +277,12 @@ func (z *ControlMsg) UnmarshalMsg(bts []byte) (o []byte, err error) {
 					return
 				}
 			}
+		case "obj":
+			bts, err = z.Obj.UnmarshalMsg(bts)
+			if err != nil {
+				err = msgp.WrapError(err, "Obj")
+				return
+			}
 		default:
 			bts, err = msgp.Skip(bts)
 			if err != nil {
@@ -280,6 +309,7 @@ func (z *ControlMsg) Msgsize() (s int) {
 	} else {
 		s += z.Res.Msgsize()
 	}
+	s += 4 + z.Obj.Msgsize()
 	return
 }
 
@@ -579,6 +609,49 @@ func (z *PossibleRes) DecodeMsg(dc *msgp.Reader) (err error) {
 					return
 				}
 			}
+		case "Capacity":
+			if dc.IsNil() {
+				err = dc.ReadNil()
+				if err != nil {
+					err = msgp.WrapError(err, "Capacity")
+					return
+				}
+				z.Capacity = nil
+			} else {
+				if z.Capacity == nil {
+					z.Capacity = new(struct {
+						V int
+					})
+				}
+				var zb0005 uint32
+				zb0005, err = dc.ReadMapHeader()
+				if err != nil {
+					err = msgp.WrapError(err, "Capacity")
+					return
+				}
+				for zb0005 > 0 {
+					zb0005--
+					field, err = dc.ReadMapKeyPtr()
+					if err != nil {
+						err = msgp.WrapError(err, "Capacity")
+						return
+					}
+					switch msgp.UnsafeString(field) {
+					case "V":
+						z.Capacity.V, err = dc.ReadInt()
+						if err != nil {
+							err = msgp.WrapError(err, "Capacity", "V")
+							return
+						}
+					default:
+						err = dc.Skip()
+						if err != nil {
+							err = msgp.WrapError(err, "Capacity")
+							return
+						}
+					}
+				}
+			}
 		default:
 			err = dc.Skip()
 			if err != nil {
@@ -593,8 +666,8 @@ func (z *PossibleRes) DecodeMsg(dc *msgp.Reader) (err error) {
 // EncodeMsg implements msgp.Encodable
 func (z *PossibleRes) EncodeMsg(en *msgp.Writer) (err error) {
 	// omitempty: check for empty values
-	zb0001Len := uint32(3)
-	var zb0001Mask uint8 /* 3 bits */
+	zb0001Len := uint32(4)
+	var zb0001Mask uint8 /* 4 bits */
 	if z.Cores == nil {
 		zb0001Len--
 		zb0001Mask |= 0x1
@@ -606,6 +679,10 @@ func (z *PossibleRes) EncodeMsg(en *msgp.Writer) (err error) {
 	if z.WTime == nil {
 		zb0001Len--
 		zb0001Mask |= 0x4
+	}
+	if z.Capacity == nil {
+		zb0001Len--
+		zb0001Mask |= 0x8
 	}
 	// variable map header, size zb0001Len
 	err = en.Append(0x80 | uint8(zb0001Len))
@@ -691,6 +768,31 @@ func (z *PossibleRes) EncodeMsg(en *msgp.Writer) (err error) {
 			}
 		}
 	}
+	if (zb0001Mask & 0x8) == 0 { // if not empty
+		// write "Capacity"
+		err = en.Append(0xa8, 0x43, 0x61, 0x70, 0x61, 0x63, 0x69, 0x74, 0x79)
+		if err != nil {
+			return
+		}
+		if z.Capacity == nil {
+			err = en.WriteNil()
+			if err != nil {
+				return
+			}
+		} else {
+			// map header, size 1
+			// write "V"
+			err = en.Append(0x81, 0xa1, 0x56)
+			if err != nil {
+				return
+			}
+			err = en.WriteInt(z.Capacity.V)
+			if err != nil {
+				err = msgp.WrapError(err, "Capacity", "V")
+				return
+			}
+		}
+	}
 	return
 }
 
@@ -698,8 +800,8 @@ func (z *PossibleRes) EncodeMsg(en *msgp.Writer) (err error) {
 func (z *PossibleRes) MarshalMsg(b []byte) (o []byte, err error) {
 	o = msgp.Require(b, z.Msgsize())
 	// omitempty: check for empty values
-	zb0001Len := uint32(3)
-	var zb0001Mask uint8 /* 3 bits */
+	zb0001Len := uint32(4)
+	var zb0001Mask uint8 /* 4 bits */
 	if z.Cores == nil {
 		zb0001Len--
 		zb0001Mask |= 0x1
@@ -711,6 +813,10 @@ func (z *PossibleRes) MarshalMsg(b []byte) (o []byte, err error) {
 	if z.WTime == nil {
 		zb0001Len--
 		zb0001Mask |= 0x4
+	}
+	if z.Capacity == nil {
+		zb0001Len--
+		zb0001Mask |= 0x8
 	}
 	// variable map header, size zb0001Len
 	o = append(o, 0x80|uint8(zb0001Len))
@@ -755,6 +861,18 @@ func (z *PossibleRes) MarshalMsg(b []byte) (o []byte, err error) {
 				err = msgp.WrapError(err, "WTime")
 				return
 			}
+		}
+	}
+	if (zb0001Mask & 0x8) == 0 { // if not empty
+		// string "Capacity"
+		o = append(o, 0xa8, 0x43, 0x61, 0x70, 0x61, 0x63, 0x69, 0x74, 0x79)
+		if z.Capacity == nil {
+			o = msgp.AppendNil(o)
+		} else {
+			// map header, size 1
+			// string "V"
+			o = append(o, 0x81, 0xa1, 0x56)
+			o = msgp.AppendInt(o, z.Capacity.V)
 		}
 	}
 	return
@@ -892,6 +1010,48 @@ func (z *PossibleRes) UnmarshalMsg(bts []byte) (o []byte, err error) {
 					return
 				}
 			}
+		case "Capacity":
+			if msgp.IsNil(bts) {
+				bts, err = msgp.ReadNilBytes(bts)
+				if err != nil {
+					return
+				}
+				z.Capacity = nil
+			} else {
+				if z.Capacity == nil {
+					z.Capacity = new(struct {
+						V int
+					})
+				}
+				var zb0005 uint32
+				zb0005, bts, err = msgp.ReadMapHeaderBytes(bts)
+				if err != nil {
+					err = msgp.WrapError(err, "Capacity")
+					return
+				}
+				for zb0005 > 0 {
+					zb0005--
+					field, bts, err = msgp.ReadMapKeyZC(bts)
+					if err != nil {
+						err = msgp.WrapError(err, "Capacity")
+						return
+					}
+					switch msgp.UnsafeString(field) {
+					case "V":
+						z.Capacity.V, bts, err = msgp.ReadIntBytes(bts)
+						if err != nil {
+							err = msgp.WrapError(err, "Capacity", "V")
+							return
+						}
+					default:
+						bts, err = msgp.Skip(bts)
+						if err != nil {
+							err = msgp.WrapError(err, "Capacity")
+							return
+						}
+					}
+				}
+			}
 		default:
 			bts, err = msgp.Skip(bts)
 			if err != nil {
@@ -923,6 +1083,12 @@ func (z *PossibleRes) Msgsize() (s int) {
 		s += msgp.NilSize
 	} else {
 		s += z.WTime.Msgsize()
+	}
+	s += 9
+	if z.Capacity == nil {
+		s += msgp.NilSize
+	} else {
+		s += 1 + 2 + msgp.IntSize
 	}
 	return
 }
