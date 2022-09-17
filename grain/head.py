@@ -275,7 +275,7 @@ class GrainManager:
                     await self.register(GrainReverseRemote(_c, vaddr, res), _n)
                     continue
                 elif cmd == "SRG": # specialized register
-                    name, res, kwargs = msg['name'], msg['res'], pickle_loads(msg['obj'])
+                    name, res, kwargs = msg['name'], msg['res'], msg['obj']
                     logger.info(f"worker {name} joined with {res}")
                     if kwargs['_stype'] not in registered_stype:
                         raise ValueError(f"Unknown specialized worker type {kwargs['_stype']}")

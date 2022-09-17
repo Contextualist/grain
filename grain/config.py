@@ -31,7 +31,7 @@ class CustomSystem:
 
 @define
 class Config:
-    system:        str
+    system:        str = ""
     script:        Script = Factory(Script)
     contextmod:    str = ""
     custom_system: Optional[CustomSystem] = None

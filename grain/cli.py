@@ -3,6 +3,7 @@ import trio
 
 from .pair import SocketChannel, notify
 from .config import load_conf
+from .util import load_mod
 from ._version import __version__
 
 from datetime import datetime
@@ -24,7 +25,7 @@ WORKER_MAIN = """echo "worker {c.name}'s node is $(hostname)"
 {c.script.setup}
 
 date
-python -m grain.worker --url {c.dial!r} --res {c.script.res_str!r} --context {c.contextmod!r}
+python -m grain.worker --url {c.dial!r} --res {c.script.res_str!r} --context {c.contextmod!r} --sworker {c.specialized_type!r}
 date
 
 {c.script.cleanup}
@@ -36,6 +37,11 @@ HEAD_MAIN = """echo "head's node is $(hostname)"
 {c.cmd}
 
 {c.script.cleanup}
+"""
+
+DFLT_TEMP = """{c.script.shebang}
+
+{{MAIN}}
 """
 
 SLURM_TEMP = """{c.script.shebang}
@@ -65,8 +71,9 @@ cd $PBS_O_WORKDIR
 """
 
 MGR_SYS = {
-    "slurm":    ("sbatch", "#SBATCH", SLURM_TEMP),
-    "pbs":      ("qsub",   "#PBS",    PBS_TEMP),
+    "":      ("perl",   "",        DFLT_TEMP),
+    "slurm": ("sbatch", "#SBATCH", SLURM_TEMP),
+    "pbs":   ("qsub",   "#PBS",    PBS_TEMP),
 }
 
 QUERY_TIMEOUT = 5
@@ -149,6 +156,9 @@ def main():
 @click.option('--dry', is_flag=True, help="Dry run. Print out the job submission script without submitting. This ignores `-n`.")
 @click.pass_context
 def up(ctx, conf, n, dry):
+    if conf.specialized_type and load_mod(conf.specialized_type).GRAIN_SWORKER_CONFIG.get("BACKENDLESS", False):
+        print(f"Specialized worker {conf.specialized_type!r} is backendless, so you don't need to run a worker.", file=sys.stderr)
+        return
     scmd, temp = gen_script(conf, is_worker=True)
     sc = temp.replace("{{MAIN}}", WORKER_MAIN).format(c=conf)
     if dry:

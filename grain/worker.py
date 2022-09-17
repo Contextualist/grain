@@ -13,7 +13,7 @@ logger.setLevel(logging.INFO)
 from .contextvar import GVAR
 from .resource import Resource
 from .pair import notify, SocketChannel
-from .util import pickle_dumps, pickle_loads, load_contextmod, nullacontext
+from .util import pickle_dumps, pickle_loads, load_contextmod, load_mod, nullacontext, as_daemon
 
 cs_pool = {}
 
@@ -39,7 +39,7 @@ async def exerf(tid, res, func, so):
 
 NO_NEXT_URL = "NO_NEXT_URL"
 
-async def grain_worker(RES, url):
+async def grain_worker(RES, url, maybe_sworker_mod=None):
     timesc = nullacontext()
     if hasattr(RES, 'T'):
         timesc = trio.fail_after(max(int(RES.deadline - time.time()), 0))
@@ -54,7 +54,14 @@ async def grain_worker(RES, url):
                SocketChannel(**sockopt, _n=_cn) as so, \
                trio.open_nursery() as _n:
         if not passive:
-            await so.send(dict(cmd="CON", name=GVAR.instance, res=RES))
+            if maybe_sworker_mod:
+                sworker_info = await _n.start(as_daemon, maybe_sworker_mod.grain_run_sworker())
+                await so.send(dict(cmd="SRG", name=sworker_info.pop("name"), res=RES, obj=dict(
+                   _stype=carg.sworker,
+                   **sworker_info,
+                )))
+            else:
+                await so.send(dict(cmd="CON", name=GVAR.instance, res=RES))
         logger.info("worker launched")
         try:
             with timesc:
@@ -95,9 +102,10 @@ async def grain_worker(RES, url):
 async def __loop():
     RES = parse_res(carg.res)
     url = carg.url
-    async with load_contextmod(carg.context)():
-        while url != NO_NEXT_URL:
-            url = await grain_worker(RES, url)
+    maybe_sworker_mod = load_mod(carg.sworker)
+    while url != NO_NEXT_URL:
+        async with load_contextmod(carg.context)():
+            url = await grain_worker(RES, url, maybe_sworker_mod)
 
 def parse_res(res_str):
     res_dict = json.loads(res_str.replace('\\n', '\n'))
@@ -119,6 +127,7 @@ if __name__ == "__main__":
     argp.add_argument('--res', '-r', default="None", help='the resource owned by the worker, in JSON '
                                                           '(e.g. \'{"Node": { "N": 16, "M": 32 }, "WTime": { "T": "1:00:00", "countdown": true }}\')')
     argp.add_argument('--context', default="", help="context module file")
+    argp.add_argument('--sworker', default="", help="specialized worker module file")
     carg = argp.parse_args()
 
     GVAR.instance = trio.socket.gethostname()
