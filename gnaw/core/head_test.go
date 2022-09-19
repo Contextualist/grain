@@ -189,7 +189,7 @@ func BenchmarkExer(b *testing.B) {
 func addWorker(name string, res Resource, workerf func(net.Conn), ge *GrainExecutor) {
 	conn := newMockEndpoint(workerf)
 	rcv := msgp.NewReader(conn)
-	ge.mgr.register(newRemote(name, res, ge.mgr, ge.prjobq, ge.Resultq, conn), rcv)
+	ge.mgr.register(newRemote(name, res, ge.mgr, ge.prjobq, ge.Resultq, conn, rcv))
 }
 
 func newMockEndpoint(workerf func(net.Conn)) net.Conn {

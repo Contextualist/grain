@@ -117,7 +117,7 @@ var (
 
 type wtime struct {
 	t, softT time.Duration
-	group      string
+	group    string
 	deadline time.Time
 }
 

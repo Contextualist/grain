@@ -55,11 +55,11 @@ func StatLoop() {
 	}
 }
 
-func workerStatistics(ws []*Remote) *strings.Builder {
+func workerStatistics(ws []IRemote) *strings.Builder {
 	s := new(strings.Builder)
 	nameLen := 5
 	for _, w := range ws {
-		if l := len(w.name); l > nameLen {
+		if l := len(w.getName()); l > nameLen {
 			nameLen = l
 		}
 	}
@@ -69,14 +69,14 @@ func workerStatistics(ws []*Remote) *strings.Builder {
 	var cAvail int
 	var cTotal, mAvail, mTotal uint
 	for _, w := range ws {
-		r := w.res.(*multiResource).resm // NOTE: assume multiresource
+		r := w.getRes().(*multiResource).resm // NOTE: assume multiresource
 		c, m := r["Cores"].(*cores), r["Memory"].(*memory)
 		p := ""
-		if w.closing {
+		if w.isClosing() {
 			p = "paused"
 		}
 		fmt.Fprintf(s, FMT,
-			w.name,
+			w.getName(),
 			fmt.Sprintf("%d/%d", len(c.c), c.n0),
 			fmt.Sprintf("%d/%d", m.m, m.m0),
 			p,

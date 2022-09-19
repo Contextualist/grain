@@ -46,38 +46,20 @@ type (
 
 	// A Remote sends functions to its worker and watch for their results
 	Remote struct {
-		name    string
-		res     Resource
-		closing bool
-		health  int64 // need to be manipulated with atomic ops
+		*RemoteBase
 
-		retryq  chan<- Task
-		resultq chan<- ResultMsg
-		mgr     *GrainManager
-		pending *pendingTaskMap
-
-		chInput       chan Task
-		closeSendOnce sync.Once
-		sendQuit      chan struct{}
-		recvQuit      chan struct{}
-		mu            sync.Mutex
-		conn          net.Conn
+		mu       sync.Mutex
+		conn     net.Conn
+		receiver *msgp.Reader
 	}
 )
 
-func newRemote(name string, res Resource, mgr *GrainManager, retryq chan<- Task, resultq chan<- ResultMsg, conn net.Conn) *Remote {
+func newRemote(name string, res Resource, mgr *GrainManager, retryq chan<- Task, resultq chan<- ResultMsg, conn net.Conn, rcv *msgp.Reader) *Remote {
+	base := newRemoteBase(name, res, mgr, retryq, resultq)
 	return &Remote{
-		name:     name,
-		res:      res,
-		health:   FULL_HEALTH,
-		mgr:      mgr,
-		retryq:   retryq,
-		resultq:  resultq,
-		pending:  newPendingTaskMap(),
-		chInput:  make(chan Task, 16),
-		sendQuit: make(chan struct{}),
-		recvQuit: make(chan struct{}),
-		conn:     conn,
+		RemoteBase: base,
+		conn:       conn,
+		receiver:   rcv,
 	}
 }
 
@@ -103,31 +85,18 @@ func (w *Remote) sendLoop() {
 	// 1. Relieving outbound network backpressure
 	// 2. Reducing lock contention
 	for t := range w.chInput {
-		var timeout *time.Timer
-		if wt, ok := t.res.(*multiResource).resm["WTime"]; ok { // NOTE: assumed multiResource
-			tid := t.id
-			timeout = time.AfterFunc(wt.(*wtime).t+3*time.Minute, func() {
-				pt, ok := w.pending.LoadAndDelete(tid)
-				if !ok { // in rare cases, we receive the result right after this timeout get triggered
-					return
-				}
-				atomic.AddUint64(&DefaultStat.lostOrLateResponse, 1)
-				log.Debug().Uint("tid", tid).Msg("resubmit due to 3 min pass timeout")
-				w.resubmit(tid, pt)
-			})
-		}
-		w.pending.Store(t.id, pendingTask{t.res, t.rawFn, timeout})
+		w.predispatch(t)
 
 		w.mu.Lock()
 		err := (&FnMsg{t.id, resToMsg(t.res), t.rawFn}).EncodeMsg(sender)
 		if err != nil {
-			w.mgr.health_dec(w, FULL_HEALTH)
+			w.health_dec(FULL_HEALTH)
 			w.mu.Unlock()
 			return
 		}
 		err = sender.Flush()
 		if err != nil {
-			w.mgr.health_dec(w, FULL_HEALTH)
+			w.health_dec(FULL_HEALTH)
 			w.mu.Unlock()
 			return
 		}
@@ -136,7 +105,7 @@ func (w *Remote) sendLoop() {
 }
 
 // pass on the result or request a retry; notify resource management
-func (w *Remote) recvLoop(receiver *msgp.Reader) {
+func (w *Remote) recvLoop() {
 	defer func() { close(w.recvQuit) }()
 	var trafficFlag uint64
 	go func() {
@@ -149,7 +118,7 @@ func (w *Remote) recvLoop(receiver *msgp.Reader) {
 					continue
 				}
 				log.Warn().Str("wname", w.name).Msg("Remote.recvLoop: heartbeat response timeout")
-				w.mgr.health_dec(w, FULL_HEALTH)
+				w.health_dec(FULL_HEALTH)
 				return
 			case <-w.recvQuit:
 				return
@@ -158,11 +127,11 @@ func (w *Remote) recvLoop(receiver *msgp.Reader) {
 	}()
 	for {
 		var r ResultMsg
-		err := r.DecodeMsg(receiver)
+		err := r.DecodeMsg(w.receiver)
 		if err != nil {
 			if !w.closing {
 				log.Error().Str("wname", w.name).Err(err).Msg("Remote.recvLoop: read error")
-				w.mgr.health_dec(w, FULL_HEALTH)
+				w.health_dec(FULL_HEALTH)
 			}
 			return
 		}
@@ -171,34 +140,8 @@ func (w *Remote) recvLoop(receiver *msgp.Reader) {
 			continue
 		}
 
-		pt, ok := w.pending.LoadAndDelete(r.Tid)
-		if !ok { // has been resubmmitted by the pending task's local timeout (pt.timeout)
-			atomic.AddUint64(&DefaultStat.lateResponse, 1)
-			log.Info().Str("wname", w.name).Uint("tid", r.Tid).Msg("Remote.recvLoop: received phantom job's result")
-			continue
-		}
-		switch r.Exception {
-		case "":
-			atomic.AddUint64(&DefaultStat.completed, 1)
-			atomic.StoreInt64(&w.health, FULL_HEALTH)
-			w.resultq <- r
-			w.mgr.dealloc(w, pt.res)
-		case "UserCancelled":
-			atomic.AddUint64(&DefaultStat.exception, 1)
-			w.mgr.dealloc(w, pt.res) // sink task if it is cancelled by user
-		default:
-			atomic.AddUint64(&DefaultStat.exception, 1)
-			log.Debug().Uint("tid", r.Tid).Msg("resubmit due to exception")
-			w.resultq <- r // notify back exception while handling resubmit
-			w.resubmit(r.Tid, pt)
-		}
+		w.postreceive(r)
 	}
-}
-
-func (w *Remote) resubmit(tid uint, pt *pendingTask) {
-	w.mgr.health_dec(w, 1)
-	w.retryq <- Task{tid, pt.res, pt.rawFn}
-	w.mgr.dealloc(w, pt.res)
 }
 
 // request worker to cancel certain running tasks; those tasks will return a UserCancelled status and not be resubmitted
@@ -222,13 +165,6 @@ func (w *Remote) batchCancel(pred taskPredicateFn) {
 	w.mu.Unlock()
 }
 
-func (w *Remote) closeSend() {
-	w.closeSendOnce.Do(func() {
-		close(w.chInput)
-		<-w.sendQuit
-	})
-}
-
 func (w *Remote) close() {
 	// assume that w.chInput will not be passed in data during and after
 	// this function call
@@ -247,18 +183,7 @@ func (w *Remote) close() {
 	_ = w.conn.Close()
 	w.mu.Unlock()
 	// migrate all pending tasks once the pending gets stable
-	w.pending.mu.Lock()
-	for tid, pt := range w.pending.m {
-		if pt.timeout != nil {
-			pt.timeout.Stop()
-		}
-		w.retryq <- Task{tid, pt.res, pt.rawFn}
-	}
-	w.pending.m = nil
-	w.pending.mu.Unlock()
-	for t := range w.chInput {
-		w.retryq <- t
-	}
+	w.ejectPending()
 }
 
 func newPendingTaskMap() *pendingTaskMap {
@@ -307,13 +232,13 @@ func (m *pendingTaskMap) WaitEmpty() {
 
 type (
 	rmtRes struct {
-		*Remote
+		IRemote
 		Resource
 	}
 	mgrCMD    int
 	mgrAction struct {
 		wn  string
-		w   *Remote
+		w   IRemote
 		cmd mgrCMD
 	}
 	// GrainManager manages workers and their resources.
@@ -346,20 +271,20 @@ func newGrainManager() *GrainManager {
 
 // This state machine holds workers and resources internally, and respond to cmd passed in through chans.
 func (mgr *GrainManager) run() {
-	var pool []*Remote
+	var pool []IRemote
 	var request *Task // current pending task
-	tryAlloc := func(w *Remote, t *Task) bool {
-		if w.closing {
+	tryAlloc := func(w IRemote, t *Task) bool {
+		if w.isClosing() {
 			return false
 		}
-		if r, ok := w.res.Alloc(t.res); ok {
+		if r, ok := w.getRes().Alloc(t.res); ok {
 			t.res = r
 			select {
-			case w.chInput <- *t: // input buffer available, fast path
+			case w.getInput() <- *t: // input buffer available, fast path
 				mgr.chAlloc <- struct{}{}
 			default: // block alloc but don't block the manager loop
 				go func(t_ Task) {
-					w.chInput <- t_
+					w.getInput() <- t_
 					mgr.chAlloc <- struct{}{}
 				}(*t)
 			}
@@ -378,8 +303,8 @@ LOOP:
 			}
 			request = &t // wait for resource
 		case wr := <-mgr.chDealloc: // new resource
-			wr.Remote.res.Dealloc(wr.Resource)
-			if request != nil && tryAlloc(wr.Remote, request) {
+			wr.IRemote.getRes().Dealloc(wr.Resource)
+			if request != nil && tryAlloc(wr.IRemote, request) {
 				request = nil
 			}
 		case a := <-mgr.chCmd:
@@ -392,10 +317,10 @@ LOOP:
 			case CMD_UNR, CMD_TRM: // quit worker(s)
 				for i := 0; i < len(pool); i++ {
 					w := pool[i]
-					if matched, _ := filepath.Match(a.wn, w.name); !matched {
+					if matched, _ := filepath.Match(a.wn, w.getName()); !matched {
 						continue
 					}
-					w.closing = true // set before w.close() in case w.close() runs in next manager cycle
+					w.setClosing() // set before w.close() in case w.close() runs in next manager cycle
 					if a.cmd == CMD_UNR {
 						go w.close() // might need extra manager cycle; safe to move on
 						pool = append(pool[:i], pool[i+1:]...)
@@ -403,17 +328,18 @@ LOOP:
 					} else {
 						w.closeSend()
 						// after closeSend, len(w.pending.m) would be non-increasing
-						w.pending.mu.Lock()
-						l := len(w.pending.m)
-						w.pending.mu.Unlock()
+						pd := w.getPending()
+						pd.mu.Lock()
+						l := len(pd.m)
+						pd.mu.Unlock()
 						if l == 0 {
 							go w.close()
 							pool = append(pool[:i], pool[i+1:]...)
 							i--
 						} else {
-							go func(a mgrAction, w *Remote) {
-								w.pending.WaitEmpty()
-								a.wn = w.name
+							go func(a mgrAction, w IRemote) {
+								w.getPending().WaitEmpty()
+								a.wn = w.getName()
 								mgr.chCmd <- a
 							}(a, w)
 						}
@@ -479,7 +405,7 @@ func (mgr *GrainManager) runAPI(ctx context.Context, url string, strawmanSwarm i
 		case "CON": // register a worker and plug it into the executor
 			res := ResFromMsg(msg.Res)
 			log.Info().Str("wname", *msg.Name).Stringer("res", res).Msg("Worker joined")
-			mgr.register(newRemote(*msg.Name, res, mgr, ge.prjobq, ge.Resultq, conn), rcv)
+			mgr.register(newRemote(*msg.Name, res, mgr, ge.prjobq, ge.Resultq, conn, rcv))
 			continue // keep this connection
 		case "REG":
 			// passive worker, not implemented yet
@@ -518,9 +444,9 @@ func (mgr *GrainManager) runAPI(ctx context.Context, url string, strawmanSwarm i
 	}
 }
 
-func (mgr *GrainManager) register(w *Remote, receiver *msgp.Reader) {
+func (mgr *GrainManager) register(w IRemote) {
 	go w.sendLoop()
-	go w.recvLoop(receiver)
+	go w.recvLoop()
 	mgr.chCmd <- mgrAction{w: w, cmd: CMD_REG}
 }
 
@@ -538,16 +464,8 @@ func (mgr *GrainManager) schedule(t Task) {
 	<-mgr.chAlloc // block until t is sent to a remote
 }
 
-func (mgr *GrainManager) dealloc(w *Remote, res Resource) {
+func (mgr *GrainManager) dealloc(w IRemote, res Resource) {
 	mgr.chDealloc <- rmtRes{w, res}
-}
-
-func (mgr *GrainManager) health_dec(w *Remote, v int64) {
-	if w.closing || atomic.AddInt64(&w.health, -v) > 0 {
-		return
-	}
-	log.Warn().Str("wname", w.name).Msg("Quit worker due to poor health")
-	mgr.unregister(w.name)
 }
 
 func (mgr *GrainManager) stat(conn net.Conn, npending int) {
