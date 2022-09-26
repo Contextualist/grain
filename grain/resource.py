@@ -280,6 +280,9 @@ class Capacity(Resource):
     def _stat(self):
         return self.v, self.V
 
+    def _encode_msgp(self):
+        return dict(V=self.V)
+
 ONE_INSTANCE = Capacity(-1) # for requester
 # This is not ideal as ONE_INSTANCE != ONE_INSTANCE
 

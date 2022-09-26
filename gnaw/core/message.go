@@ -49,6 +49,9 @@ func ResFromMsg(rmsg *PossibleRes) Resource {
 	if rmsg.WTime != nil {
 		rm["WTime"] = WTime(rmsg.WTime.T, rmsg.WTime.SoftT, rmsg.WTime.Group, rmsg.WTime.Countdown)
 	}
+	if rmsg.Capacity != nil {
+		rm["Capacity"] = Capacity(rmsg.Capacity.V)
+	}
 	return &multiResource{rm}
 }
 
@@ -64,6 +67,9 @@ func resToMsg(rm Resource) PossibleRes {
 	if t, ok := rm_.resm["WTime"]; ok {
 		t_ := t.(*wtime)
 		pr.WTime = &WTimeMsg{T: uint64(t_.t.Seconds()), SoftT: uint64(t_.softT.Seconds())}
+	}
+	if v, ok := rm_.resm["Capacity"]; ok {
+		pr.Capacity = &struct{ V int }{v.(*capacity).v}
 	}
 	return pr
 }

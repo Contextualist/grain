@@ -197,6 +197,31 @@ func mean_std(s []float64) (float64, float64) {
 	return m, math.Sqrt(v / float64((len(s) - 1)))
 }
 
+type capacity struct {
+	v, v0 int
+}
+
+func Capacity(v0 int) *capacity {
+	return &capacity{v: v0, v0: v0}
+}
+func (v *capacity) Alloc(r Resource) (Resource, bool) {
+	rv, ok := r.(*capacity)
+	if !ok || v.v <= 0 {
+		return nil, false
+	}
+	v.v -= 1
+	return rv, true
+}
+func (v *capacity) Dealloc(_r Resource) {
+	v.v += 1
+}
+func (v *capacity) String() string {
+	return fmt.Sprintf("Capacity(%d)", v.v)
+}
+func (v *capacity) Name() string {
+	return "Capacity"
+}
+
 type multiResource struct {
 	resm map[string]Resource
 }
