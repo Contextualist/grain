@@ -15,9 +15,9 @@ logger = logging.getLogger(__name__)
 
 @define(slots=False)
 class Script:
-    cores:         int
-    memory:        int
-    setup_cleanup: str
+    cores:         int = 0
+    memory:        int = 0
+    setup_cleanup: str = ""
     shebang:       str = "#!/bin/bash"
     queue:         str = "''"
     walltime:      str = "12:00:00"

@@ -9,8 +9,8 @@
 # the worker job script generated.
 
 # HPC job management system.
-# Supported: slurm, pbs
-system = "slurm"
+# Supported: "" (None), slurm, pbs
+system = "" # optional
 
 # Context module loaded in head and worker's runtime.
 # If given, it should be the path to a Python file with an async context
@@ -102,10 +102,10 @@ Capacity = { V=8 }
 [script]
 
 shebang = "#!/bin/bash" # optional
-queue = "general"
+queue = "''" # optional
 walltime = "12:00:00" # optional
-cores = 48
-memory = 60
+cores = 0 # optional
+memory = 0 # optional
 extra_args = [] # optional
 
 # `defer` is a magic statement that makes the cmd

@@ -127,9 +127,13 @@ def gen_script(conf, is_worker=False):
     rmem = int(scriptc.memory/15*14)
     scriptc.walltime, rwalltime = norm_wtime(scriptc.walltime)
     if is_worker:
+        res = dict()
+        if scriptc.cores or rmem:
+            res["Node"] = dict(N=scriptc.cores, M=rmem)
+        if rwalltime:
+            res["WTime"] = dict(T=rwalltime, countdown=True)
         scriptc.res_str = json.dumps(dict(
-            Node=dict(N=scriptc.cores, M=rmem),
-            WTime=dict(T=rwalltime, countdown=True),
+            **res,
             **conf.res,
         ))
     scriptc.setup, scriptc.cleanup = eval_defer(scriptc.setup_cleanup)
