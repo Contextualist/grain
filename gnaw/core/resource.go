@@ -17,6 +17,7 @@ type Resource interface {
 	Dealloc(Resource)
 	String() string
 	Name() string
+	Stat() (uint, uint)
 }
 
 type memory struct {
@@ -42,6 +43,9 @@ func (m *memory) String() string {
 }
 func (m *memory) Name() string {
 	return "Memory"
+}
+func (m *memory) Stat() (uint, uint) {
+	return m.m, m.m0
 }
 
 type cores struct {
@@ -102,6 +106,9 @@ func (c *cores) String() string {
 }
 func (c *cores) Name() string {
 	return "Cores"
+}
+func (c *cores) Stat() (uint, uint) {
+	return uint(len(c.c)), c.n0
 }
 
 const (
@@ -185,6 +192,9 @@ func (t *wtime) String() string {
 func (t *wtime) Name() string {
 	return "WTime"
 }
+func (t *wtime) Stat() (uint, uint) {
+	return 0, 0
+}
 func mean_std(s []float64) (float64, float64) {
 	var m, v float64
 	for _, x := range s {
@@ -216,10 +226,16 @@ func (v *capacity) Dealloc(_r Resource) {
 	v.v += 1
 }
 func (v *capacity) String() string {
+	if v.v0 == -1 {
+		return "ONE"
+	}
 	return fmt.Sprintf("Capacity(%d)", v.v)
 }
 func (v *capacity) Name() string {
 	return "Capacity"
+}
+func (v *capacity) Stat() (uint, uint) {
+	return uint(v.v), uint(v.v0)
 }
 
 type multiResource struct {
@@ -284,4 +300,7 @@ func (m *multiResource) String() string {
 }
 func (m *multiResource) Name() string {
 	return "MultiResource"
+}
+func (m *multiResource) Stat() (uint, uint) {
+	return 0, 0
 }
