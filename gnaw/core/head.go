@@ -54,7 +54,7 @@ type (
 	}
 )
 
-func newRemote(name string, res Resource, mgr *GrainManager, retryq chan<- Task, resultq chan<- ResultMsg, conn net.Conn, rcv *msgp.Reader) *Remote {
+func newRemote(name string, res Resource, mgr ResourceManager, retryq chan<- Task, resultq chan<- ResultMsg, conn net.Conn, rcv *msgp.Reader) *Remote {
 	base := newRemoteBase(name, res, mgr, retryq, resultq)
 	return &Remote{
 		RemoteBase: base,
@@ -365,7 +365,7 @@ LOOP:
 	}
 }
 
-func (mgr *GrainManager) runAPI(ctx context.Context, url string, strawmanSwarm int, ge *GrainExecutor) {
+func (mgr *GrainManager) runAPI(ctx context.Context, url string, strawmanSwarm int, ge *GrainExecutor, stager *SpecializedStager) {
 	ln, err := gnet.Listen(url)
 	if err != nil {
 		panic(err)
@@ -407,6 +407,11 @@ func (mgr *GrainManager) runAPI(ctx context.Context, url string, strawmanSwarm i
 			log.Info().Str("wname", *msg.Name).Stringer("res", res).Msg("Worker joined")
 			mgr.register(newRemote(*msg.Name, res, mgr, ge.prjobq, ge.Resultq, conn, rcv))
 			continue // keep this connection
+		case "SRG": // specialized worker registration
+			res := ResFromMsg(msg.Res)
+			log.Info().Str("wname", *msg.Name).Stringer("res", res).Msg("Worker joined")
+			mgr.register(stager.addSpecializedRemote(*msg.Name, res, *msg.Obj, mgr, ge.prjobq, conn))
+			continue // keep this connection FIXME: if not backendless
 		case "REG":
 			// passive worker, not implemented yet
 		case "UNR":
@@ -493,7 +498,7 @@ type GrainExecutor struct {
 	mgr     *GrainManager
 }
 
-func NewGrainExecutor(ctx context.Context, url string, strawmanSwarm int) *GrainExecutor {
+func NewGrainExecutor(ctx context.Context, url string, strawmanSwarm int, stager *SpecializedStager) *GrainExecutor {
 	mgr := newGrainManager()
 	go mgr.run()
 	ge := &GrainExecutor{
@@ -502,7 +507,7 @@ func NewGrainExecutor(ctx context.Context, url string, strawmanSwarm int) *Grain
 		Resultq: make(chan ResultMsg, 3000),
 		mgr:     mgr,
 	}
-	go mgr.runAPI(ctx, url, strawmanSwarm, ge)
+	go mgr.runAPI(ctx, url, strawmanSwarm, ge, stager)
 	return ge
 }
 

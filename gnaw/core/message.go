@@ -9,19 +9,23 @@ type (
 		Cmd  string       `msg:"cmd"`
 		Name *string      `msg:"name,omitempty"`
 		Res  *PossibleRes `msg:"res,omitempty"`
-		Obj  msgp.Raw     `msg:"obj,omitempty"`
+		Obj  *msgp.Raw    `msg:"obj,omitempty"`
 	}
 
 	FnMsg struct {
-		Tid  uint        `msg:"tid"`
-		Res  PossibleRes `msg:"res"`
-		Func msgp.Raw    `msg:"func"`
+		Tid uint        `msg:"tid"`
+		Res PossibleRes `msg:"res"`
+		// Usually store the pickled Python function to be executed;
+		// when as an approval stub, this stores the name (string) of the sworker instance.
+		Func msgp.Raw `msg:"func"`
 	}
 
 	ResultMsg struct {
-		Tid       uint     `msg:"tid"`
-		Exception string   `msg:"exception"`
-		Result    msgp.Raw `msg:"result"`
+		Tid       uint   `msg:"tid"`
+		Exception string `msg:"exception"`
+		// Usually store the pickled execution result / exception;
+		// when as a rstatus stub, this stores the name (string) of the sworker instance.
+		Result msgp.Raw `msg:"result"`
 	}
 
 	PossibleRes struct {

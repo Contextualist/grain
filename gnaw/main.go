@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -39,11 +40,12 @@ var (
 	idleTimer  = time.NewTimer(8760 * time.Hour)
 )
 
-func dockLoop(conn net.Conn, exer *core.GrainExecutor, dockID uint, chRet chan core.ResultMsg, dockClose func()) {
+func dockLoop(conn net.Conn, hsmsg core.ControlMsg, exer *core.GrainExecutor, stager *core.SpecializedStager, dockID uint, chRet chan core.ResultMsg, dockClose func()) {
 	chDone := make(chan struct{})
 	defer func() {
 		dockClose()
 		_ = conn.Close()
+		stager.RemoveFeedbackRemote(dockID)
 		log.Info().Uint("dockID", dockID).Msg("RemoteExer quits")
 		exer.Filter(func(tid uint) bool { return tid%MAX_DOCKS != dockID }) // discard all queued and running tasks
 		time.Sleep(DOCK_COOLDOWN)
@@ -58,6 +60,10 @@ func dockLoop(conn net.Conn, exer *core.GrainExecutor, dockID uint, chRet chan c
 	bufException := make(chan core.ResultMsg, 32)
 	go func() { // send results back
 		snd := msgp.NewWriter(conn)
+		err := stager.SendSynAck(snd, dockID)
+		if err != nil {
+			log.Error().Err(err).Uint("dockID", dockID).Msg("handshake SendSynAck failed")
+		}
 		for r := range chRet {
 			if len(r.Exception) > 0 && r.Tid > 0 {
 				bufException <- r
@@ -110,12 +116,6 @@ func dockLoop(conn net.Conn, exer *core.GrainExecutor, dockID uint, chRet chan c
 	}()
 
 	rcv := msgp.NewReader(conn)
-	var hsmsg core.ControlMsg
-	err := hsmsg.DecodeMsg(rcv)
-	if err != nil {
-		log.Error().Uint("dockID", dockID).Err(err).Msg("Error handling handshake from RemoteExer")
-		return
-	}
 	var submit func(uint, core.Resource, msgp.Raw)
 	if strings.HasSuffix(*hsmsg.Name, "-p") {
 		submit = exer.SubmitPrioritized
@@ -139,7 +139,9 @@ func dockLoop(conn net.Conn, exer *core.GrainExecutor, dockID uint, chRet chan c
 }
 
 func run(ctx context.Context) {
-	exer := core.NewGrainExecutor(ctx, *wurl, *swarm)
+	stager := core.NewSpecializedStager()
+	go stager.Run(ctx, func(gtid uint) (uint, uint) { return gtid % MAX_DOCKS, gtid / MAX_DOCKS })
+	exer := core.NewGrainExecutor(ctx, *wurl, *swarm, stager)
 	go exer.Run()
 
 	var mu sync.RWMutex
@@ -183,6 +185,57 @@ func run(ctx context.Context) {
 			}
 			panic(err)
 		}
+
+		// Handshakes:
+		// frontend --cmd: chTaskResult, name: remote_name--> Gnaw
+		// [Gnaw alloc a dock for frontend]
+		// Gnaw --obj: { sworker_name: sworker_kws }, name: dock_id--> frontend
+		// (optional) [frontend starts sremotes]
+		// (optional) frontend --cmd: chApprovalFeedback, name: dock_id--> Gnaw
+		rcv := msgp.NewReader(conn)
+		var hsmsg core.ControlMsg
+		err = hsmsg.DecodeMsg(rcv)
+		logger := log.Error().Stringer("addr", conn.RemoteAddr())
+		handleHandshakeErr := func(msg string, err ...error) bool {
+			if len(err) == 1 {
+				if err[0] == nil {
+					return false
+				}
+				logger.Err(err[0]).Msg(msg)
+			} else {
+				logger.Msg(msg)
+			}
+			conn.Close()
+			return true
+		}
+		if handleHandshakeErr("Error handling handshake from RemoteExer", err) {
+			continue
+		}
+		switch hsmsg.Cmd {
+		case "chApprovalRStatus":
+			if hsmsg.Name == nil {
+				handleHandshakeErr("handshake msg for chApprovalRStatus missing field Name")
+				continue
+			}
+			dc_, err := strconv.Atoi(*hsmsg.Name)
+			if dc_ < 0 {
+				err = errors.New("expect a non-negative int")
+			}
+			if handleHandshakeErr("chApprovalRStatus handshake msg field Name is not an uint", err) {
+				continue
+			}
+			dc := uint(dc_)
+			stager.AddFeedbackRemote(dc, conn, func(rtid uint) uint { return rtid*MAX_DOCKS + dc })
+			// Ack part of the handshake will be taken care by the feedback remote's sendLoop
+			continue
+		case "chTaskResult":
+			// SynAck part of the handshake will be taken care after a dock is allocated.
+		default:
+			logger = logger.Str("cmd", hsmsg.Cmd)
+			handleHandshakeErr("Unknown handshake command from RemoteExer")
+			continue
+		}
+
 		var dc uint
 		select {
 		case dc = <-docksAvail:
@@ -203,7 +256,7 @@ func run(ctx context.Context) {
 				delete(chDocks, dc)
 			}
 		}(dc)
-		go dockLoop(conn, exer, dc, chDock, dclose)
+		go dockLoop(conn, hsmsg, exer, stager, dc, chDock, dclose)
 	}
 }
 

@@ -3,6 +3,7 @@ import psutil
 
 from .conn_msgp import send_packet
 from .pair import SocketChannel
+from .head import GrainSpecializedRemote
 from .util import WaitGroup, pickle_dumps, pickle_loads, timeblock
 
 import secrets
@@ -24,7 +25,7 @@ class RemoteExecutor:
         ``gnaw``, ignoring ``head.gnaw`` in the config. By default, the Gnaw
         executor is a managed daemon process.
     """
-    def __init__(self, _n=None, config=None, gnaw=DAEMON, name="", prioritized=False, **kwargs):
+    def __init__(self, _n=None, config=None, gnaw=DAEMON, name="", prioritized=False, sworker_config=(), **kwargs):
         if kwargs:
             logger.warning(f"kwargs {kwargs} are ignored")
         self.gnaw = gnaw
@@ -40,6 +41,9 @@ class RemoteExecutor:
         if gnaw is DAEMON:
             self.listen = config.listen
             self.gnaw_conf = config.gnaw
+        self.side_c = None
+        self.fnd = {}
+
 
     def submit(self, res, fn, *args, **kwargs):
         tid = self.jobn = self.jobn+1
@@ -50,11 +54,16 @@ class RemoteExecutor:
         await self._wg.wait() # no pending task => end of resubmission
         await self.push_job.aclose()
         await self._c.aclose()
+        await self.side_c.aclose()
     async def _sender(self):
         async with self.pull_job: # XXX: currently no ratelimit on sending
             async for tid, res, fargs in self.pull_job:
                 self._wg.add()
-                await send_packet(self._c._so, dict(tid=tid, res=res, func=pickle_dumps(fargs))) # We don't need locking
+                if not hasattr(res, "N"): # heuristic to determine if this is a sworker task
+                    self.fnd[tid], func = fargs, None
+                else:
+                    func = pickle_dumps(fargs)
+                await send_packet(self._c._so, dict(tid=tid, res=res, func=func)) # We don't need locking
     async def run(self, task_status=trio.TASK_STATUS_IGNORED):
         if self.gnaw is DAEMON: # gnaw daemon with unixconn
             # process detection
@@ -94,7 +103,10 @@ class RemoteExecutor:
         with timeblock("all jobs"):
             async with SocketChannel(self.gnaw, dial=True, _n=self._n) as self._c, \
                        self.push_result:
-                await send_packet(self._c._so, dict(name=self.name)) # handshake
+                # handshake
+                await send_packet(self._c._so, dict(cmd="chTaskResult", name=self.name))
+                hsmsg = await self._c.receive()
+                await self._n.start(self.run_sworker_clients, hsmsg)
                 self._n.start_soon(self._sender)
                 task_status.started()
                 async for x in self._c:
@@ -113,3 +125,46 @@ class RemoteExecutor:
         if any(exc):
             return False
         self._n.start_soon(self.sealer)
+
+    # TODO: backendless sworker
+    async def run_sworker_clients(self, hsmsg, task_status=trio.TASK_STATUS_IGNORED):
+        assert hsmsg["cmd"] == "hsSynAck"
+        pool = dict()
+
+        async def _reg(name, kwargs):
+            logger.info(f"client for specialized worker {name} started")
+            # We don't need to manage resource or connection here
+            sr = GrainSpecializedRemote(name, None, None, kwargs)
+            await sr.connect(_n)
+            pool[name] = sr
+
+        async def _run_task(tid, res, client_name):
+            ok, r = await pool[client_name].execf(tid, res, self.fnd[tid])
+            await self.side_c.send(dict(tid=tid, exception="Exception" if not ok else "", result=client_name))
+            if ok:
+                self.push_result.send_nowait((tid, r))
+                self._wg.done()
+                del self.fnd[tid]
+            else:
+                # TODO: buffered exp
+                exp, tb = r
+                logger.error(f"Exception from task: {exp}\n{tb}")
+
+        async with trio.open_nursery() as _n:
+            for name, kwargs in hsmsg["obj"].items():
+                await _reg(name, kwargs)
+            async with SocketChannel(self.gnaw, dial=True, _n=_n) as self.side_c:
+                await send_packet(self.side_c._so, dict(cmd="chApprovalRStatus", name=str(hsmsg["name"])))
+                assert (await self.side_c.receive())["cmd"] == "hsAck"
+                task_status.started()
+                async for x in self.side_c:
+                    cmd = x.get("cmd", "")
+                    if cmd == "":
+                        tid, res, client_name = x["tid"], x["res"], x["func"]
+                        _n.start_soon(_run_task, tid, res, client_name)
+                    elif cmd == "pushSWorker":
+                        await _reg(x["name"], x["obj"])
+                    else:
+                        logger.warning(f"specialized worker client manager received unknown command {cmd}")
+            for sr in pool.values():
+                await sr.aclose()

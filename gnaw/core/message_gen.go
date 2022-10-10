@@ -67,10 +67,22 @@ func (z *ControlMsg) DecodeMsg(dc *msgp.Reader) (err error) {
 				}
 			}
 		case "obj":
-			err = z.Obj.DecodeMsg(dc)
-			if err != nil {
-				err = msgp.WrapError(err, "Obj")
-				return
+			if dc.IsNil() {
+				err = dc.ReadNil()
+				if err != nil {
+					err = msgp.WrapError(err, "Obj")
+					return
+				}
+				z.Obj = nil
+			} else {
+				if z.Obj == nil {
+					z.Obj = new(msgp.Raw)
+				}
+				err = z.Obj.DecodeMsg(dc)
+				if err != nil {
+					err = msgp.WrapError(err, "Obj")
+					return
+				}
 			}
 		default:
 			err = dc.Skip()
@@ -95,6 +107,10 @@ func (z *ControlMsg) EncodeMsg(en *msgp.Writer) (err error) {
 	if z.Res == nil {
 		zb0001Len--
 		zb0001Mask |= 0x4
+	}
+	if z.Obj == nil {
+		zb0001Len--
+		zb0001Mask |= 0x8
 	}
 	// variable map header, size zb0001Len
 	err = en.Append(0x80 | uint8(zb0001Len))
@@ -152,15 +168,24 @@ func (z *ControlMsg) EncodeMsg(en *msgp.Writer) (err error) {
 			}
 		}
 	}
-	// write "obj"
-	err = en.Append(0xa3, 0x6f, 0x62, 0x6a)
-	if err != nil {
-		return
-	}
-	err = z.Obj.EncodeMsg(en)
-	if err != nil {
-		err = msgp.WrapError(err, "Obj")
-		return
+	if (zb0001Mask & 0x8) == 0 { // if not empty
+		// write "obj"
+		err = en.Append(0xa3, 0x6f, 0x62, 0x6a)
+		if err != nil {
+			return
+		}
+		if z.Obj == nil {
+			err = en.WriteNil()
+			if err != nil {
+				return
+			}
+		} else {
+			err = z.Obj.EncodeMsg(en)
+			if err != nil {
+				err = msgp.WrapError(err, "Obj")
+				return
+			}
+		}
 	}
 	return
 }
@@ -178,6 +203,10 @@ func (z *ControlMsg) MarshalMsg(b []byte) (o []byte, err error) {
 	if z.Res == nil {
 		zb0001Len--
 		zb0001Mask |= 0x4
+	}
+	if z.Obj == nil {
+		zb0001Len--
+		zb0001Mask |= 0x8
 	}
 	// variable map header, size zb0001Len
 	o = append(o, 0x80|uint8(zb0001Len))
@@ -209,12 +238,18 @@ func (z *ControlMsg) MarshalMsg(b []byte) (o []byte, err error) {
 			}
 		}
 	}
-	// string "obj"
-	o = append(o, 0xa3, 0x6f, 0x62, 0x6a)
-	o, err = z.Obj.MarshalMsg(o)
-	if err != nil {
-		err = msgp.WrapError(err, "Obj")
-		return
+	if (zb0001Mask & 0x8) == 0 { // if not empty
+		// string "obj"
+		o = append(o, 0xa3, 0x6f, 0x62, 0x6a)
+		if z.Obj == nil {
+			o = msgp.AppendNil(o)
+		} else {
+			o, err = z.Obj.MarshalMsg(o)
+			if err != nil {
+				err = msgp.WrapError(err, "Obj")
+				return
+			}
+		}
 	}
 	return
 }
@@ -278,10 +313,21 @@ func (z *ControlMsg) UnmarshalMsg(bts []byte) (o []byte, err error) {
 				}
 			}
 		case "obj":
-			bts, err = z.Obj.UnmarshalMsg(bts)
-			if err != nil {
-				err = msgp.WrapError(err, "Obj")
-				return
+			if msgp.IsNil(bts) {
+				bts, err = msgp.ReadNilBytes(bts)
+				if err != nil {
+					return
+				}
+				z.Obj = nil
+			} else {
+				if z.Obj == nil {
+					z.Obj = new(msgp.Raw)
+				}
+				bts, err = z.Obj.UnmarshalMsg(bts)
+				if err != nil {
+					err = msgp.WrapError(err, "Obj")
+					return
+				}
 			}
 		default:
 			bts, err = msgp.Skip(bts)
@@ -309,7 +355,12 @@ func (z *ControlMsg) Msgsize() (s int) {
 	} else {
 		s += z.Res.Msgsize()
 	}
-	s += 4 + z.Obj.Msgsize()
+	s += 4
+	if z.Obj == nil {
+		s += msgp.NilSize
+	} else {
+		s += z.Obj.Msgsize()
+	}
 	return
 }
 

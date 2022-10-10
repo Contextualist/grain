@@ -56,7 +56,8 @@ async def grain_worker(RES, url, maybe_sworker_mod=None):
         if not passive:
             if maybe_sworker_mod:
                 sworker_info = await _n.start(as_daemon, maybe_sworker_mod.grain_run_sworker())
-                await so.send(dict(cmd="SRG", name=sworker_info.pop("name"), res=RES, obj=dict(
+                name = GVAR.instance = sworker_info.pop("name")
+                await so.send(dict(cmd="SRG", name=name, res=RES, obj=dict(
                    _stype=carg.sworker,
                    **sworker_info,
                 )))

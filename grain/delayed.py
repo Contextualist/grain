@@ -342,10 +342,10 @@ async def boot(subtasks, args, kwargs):
     config_file = kwargs.pop('config_file', None)
     config = load_conf(config_file, 'head')
     sworker_config = load_conf_sworker(config_file)
+    kwargs['sworker_config'] = sworker_config
     Exer = RemoteExecutor
-    if local or not config.gnaw.enabled or sworker_config:
+    if local or not config.gnaw.enabled:
         Exer = GrainExecutor
-        kwargs['sworker_config'] = sworker_config
     async with trio.open_nursery() as _n, \
                Exer(_n=_n, config=config, *args, **kwargs) as exer:
         rch = {}
