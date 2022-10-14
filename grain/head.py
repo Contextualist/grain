@@ -168,11 +168,15 @@ class GrainSpecializedRemote(GrainPseudoRemote):
             cs.cancel()
         if self._c:
             await self._c.try_send(dict(cmd="FIN")) # fails if KI or connection lost
-        logger.info(f"worker {self.name} starts cleaning up")
+            logger.info(f"worker {self.name} starts cleaning up")
+        else:
+            logger.info(f"client for specialized worker {self.name} starts cleaning up")
         await self.wg.wait()
         if self._c:
             await self._c.aclose() # for P2P connection
-        logger.info(f"worker {self.name} clear")
+            logger.info(f"worker {self.name} clear")
+        else:
+            logger.info(f"client for specialized worker {self.name} clear")
 
 
 class GrainManager:

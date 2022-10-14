@@ -145,7 +145,7 @@ func (s *SpecializedStager) removeSpecializedRemote(name string) {
 	close(s.chRStatus[name])
 	delete(s.chRStatus, name)
 	delete(s.sworkerArgs, name)
-	// currently not informing the feedback remotes, assuming the sworker clients are cheap
+	s.notifyQuitSpecializedRemote(name)
 	s.muR.Unlock()
 }
 
@@ -173,13 +173,24 @@ func (s *SpecializedStager) SendSynAck(snd *msgp.Writer, id uint) (err error) {
 	return
 }
 
-// Inform frontend about a recently connected SpecializedRemote
+// Inform all frontends about a recently connected SpecializedRemote
 func (s *SpecializedStager) announceSpecializedRemote(name string, obj msgp.Raw) {
 	s.muA.RLock()
 	defer s.muA.RUnlock()
 	for _, fb := range s.feedbacks {
 		if err := fb.announceSpecializedRemote(name, obj); err != nil {
 			log.Warn().Err(err).Uint("id", fb.id).Msg("Failed to announce specialized remote to a feedback remote")
+		}
+	}
+}
+
+// Inform all frontends about a recently quitted SpecializedRemote
+func (s *SpecializedStager) notifyQuitSpecializedRemote(name string) {
+	s.muA.RLock()
+	defer s.muA.RUnlock()
+	for _, fb := range s.feedbacks {
+		if err := fb.notifyQuitSpecializedRemote(name); err != nil {
+			log.Warn().Err(err).Uint("id", fb.id).Msg("Failed to notify on a quitted specialized remote to a feedback remote")
 		}
 	}
 }
@@ -201,7 +212,6 @@ type (
 )
 
 func newFeedbackRemote(id uint, importTid tidImportFn, conn net.Conn, chApproval chan FnMsg, rstatusq chan ResultMsg) *feedbackRemote {
-	//base := newRemoteBase(name, nil, )
 	return &feedbackRemote{
 		id:         id,
 		chApproval: chApproval,
@@ -270,6 +280,18 @@ func (w *feedbackRemote) announceSpecializedRemote(name string, obj msgp.Raw) (e
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if err = (&ControlMsg{Cmd: "pushSWorker", Name: &name, Obj: &obj}).EncodeMsg(w.sender); err != nil {
+		return
+	}
+	if err = w.sender.Flush(); err != nil {
+		return
+	}
+	return
+}
+
+func (w *feedbackRemote) notifyQuitSpecializedRemote(name string) (err error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if err = (&ControlMsg{Cmd: "quitSWorker", Name: &name}).EncodeMsg(w.sender); err != nil {
 		return
 	}
 	if err = w.sender.Flush(); err != nil {

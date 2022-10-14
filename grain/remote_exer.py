@@ -137,6 +137,9 @@ class RemoteExecutor:
             sr = GrainSpecializedRemote(name, None, None, kwargs)
             await sr.connect(_n)
             pool[name] = sr
+        async def _unreg(name):
+            if (sr := pool.pop(name, None)) is not None:
+                await sr.aclose()
 
         async def _run_task(tid, res, client_name):
             ok, r = await pool[client_name].execf(tid, res, self.fnd[tid])
@@ -164,6 +167,8 @@ class RemoteExecutor:
                         _n.start_soon(_run_task, tid, res, client_name)
                     elif cmd == "pushSWorker":
                         await _reg(x["name"], x["obj"])
+                    elif cmd == "quitSWorker":
+                        await _unreg(x["name"])
                     else:
                         logger.warning(f"specialized worker client manager received unknown command {cmd}")
             for sr in pool.values():
