@@ -22,7 +22,7 @@ import (
 	"github.com/tinylib/msgp/msgp"
 )
 
-const DOCK_COOLDOWN = 1 * time.Minute
+const DOCK_COOLDOWN = 10 * time.Second
 
 var (
 	hurl        = flag.String("hurl", "", "URL for RemoteExers to connect")
