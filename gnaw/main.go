@@ -226,7 +226,7 @@ func run(ctx context.Context) {
 			}
 			dc := uint(dc_)
 			stager.AddFeedbackRemote(dc, conn, func(rtid uint) uint { return rtid*MAX_DOCKS + dc })
-			// Ack part of the handshake will be taken care by the feedback remote's sendLoop
+			// Ack part of the handshake will be taken care during the feedback remote's registration
 			continue
 		case "chTaskResult":
 			// SynAck part of the handshake will be taken care after a dock is allocated.

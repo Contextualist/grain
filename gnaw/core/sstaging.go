@@ -111,6 +111,7 @@ func (s *SpecializedStager) AddFeedbackRemote(id uint, conn net.Conn, importTid 
 	s.muA.Lock()
 	s.chApprovals[id] = chA
 	s.feedbacks[id] = r
+	r.sendAck()
 	s.muA.Unlock()
 	go r.sendLoop()
 	go r.recvLoop()
@@ -222,7 +223,8 @@ func newFeedbackRemote(id uint, importTid tidImportFn, conn net.Conn, chApproval
 	}
 }
 
-func (w *feedbackRemote) sendLoop() {
+// First msg to the frontend; declare readiness
+func (w *feedbackRemote) sendAck() {
 	logger := log.Error().Uint("id", w.id)
 	if err := (&ControlMsg{Cmd: "hsAck"}).EncodeMsg(w.sender); err != nil {
 		logger.Err(err).Msg("chApprovalRStatus handshake ack failed")
@@ -232,6 +234,10 @@ func (w *feedbackRemote) sendLoop() {
 		logger.Err(err).Msg("chApprovalRStatus handshake ack failed")
 		return
 	}
+}
+
+func (w *feedbackRemote) sendLoop() {
+	logger := log.Error().Uint("id", w.id)
 	for t := range w.chApproval {
 		w.mu.Lock()
 		err := t.EncodeMsg(w.sender)
