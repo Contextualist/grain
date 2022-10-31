@@ -3,7 +3,7 @@ import psutil
 
 from .conn_msgp import send_packet
 from .pair import SocketChannel
-from .head import GrainSpecializedRemote
+from .head import GrainSpecializedRemote, backendless_sworker_manager
 from .util import WaitGroup, pickle_dumps, pickle_loads, timeblock
 
 import secrets
@@ -30,6 +30,7 @@ class RemoteExecutor:
             logger.warning(f"kwargs {kwargs} are ignored")
         self.gnaw = gnaw
         self.name = name + ("-p" if prioritized else "")
+        self.sworker_config = sworker_config
         self.push_job, self.pull_job = trio.open_memory_channel(INFIN)
         self.push_result, self.resultq = trio.open_memory_channel(INFIN)
         self.jobn = 0
@@ -38,8 +39,8 @@ class RemoteExecutor:
         self._c = None
         self._cs = None
         self._wg = WaitGroup() # track the entire lifetime of each job
+        self.listen = config.listen
         if gnaw is DAEMON:
-            self.listen = config.listen
             self.gnaw_conf = config.gnaw
         self.side_c = None
         self.fnd = {}
@@ -106,7 +107,9 @@ class RemoteExecutor:
                 # handshake
                 await send_packet(self._c._so, dict(cmd="chTaskResult", name=self.name))
                 hsmsg = await self._c.receive()
-                await self._n.start(self.run_sworker_clients, hsmsg)
+                assert hsmsg["cmd"] == "hsSynAck"
+                # self.run_sworker_clients will create chApprovalRStatus and start all required clients before reporting started
+                await self._n.start(self.run_sworker_clients, hsmsg["name"])
                 self._n.start_soon(self._sender)
                 task_status.started()
                 async for x in self._c:
@@ -126,13 +129,14 @@ class RemoteExecutor:
             return False
         self._n.start_soon(self.sealer)
 
-    # TODO: backendless sworker
-    async def run_sworker_clients(self, hsmsg, task_status=trio.TASK_STATUS_IGNORED):
-        assert hsmsg["cmd"] == "hsSynAck"
+    async def run_sworker_clients(self, dock_id, task_status=trio.TASK_STATUS_IGNORED):
         pool = dict()
+        started = False
 
         async def _reg(name, kwargs):
             logger.info(f"client for specialized worker {name} started")
+            if backendless_stype:
+                backendless_stype.discard(kwargs.get("_stype", None))
             # We don't need to manage resource or connection here
             sr = GrainSpecializedRemote(name, None, None, kwargs)
             await sr.connect(_n)
@@ -154,12 +158,17 @@ class RemoteExecutor:
                 logger.error(f"Exception from task: {exp}\n{tb}")
 
         async with trio.open_nursery() as _n:
-            for name, kwargs in hsmsg["obj"].items():
-                await _reg(name, kwargs)
+            _, backendless_stype, _backendless_sworker_n = await _n.start(backendless_sworker_manager, self.sworker_config, self.listen)
             async with SocketChannel(self.gnaw, dial=True, _n=_n) as self.side_c:
-                await send_packet(self.side_c._so, dict(cmd="chApprovalRStatus", name=str(hsmsg["name"])))
-                assert (await self.side_c.receive())["cmd"] == "hsAck"
-                task_status.started()
+                await send_packet(self.side_c._so, dict(cmd="chApprovalRStatus", name=dock_id))
+                hsmsg = await self.side_c.receive()
+                assert hsmsg["cmd"] == "hsAck"
+                for name, kwargs in hsmsg["obj"].items():
+                    await _reg(name, kwargs)
+                if not started and not backendless_stype:
+                    started = True
+                    task_status.started()
+                # otherwise there is any pending backendless sworker, wait until registered
                 async for x in self.side_c:
                     cmd = x.get("cmd", "")
                     if cmd == "":
@@ -167,9 +176,13 @@ class RemoteExecutor:
                         _n.start_soon(_run_task, tid, res, client_name)
                     elif cmd == "pushSWorker":
                         await _reg(x["name"], x["obj"])
+                        if not started and not backendless_stype:
+                            started = True
+                            task_status.started()
                     elif cmd == "quitSWorker":
                         await _unreg(x["name"])
                     else:
                         logger.warning(f"specialized worker client manager received unknown command {cmd}")
             for sr in pool.values():
                 await sr.aclose()
+            _backendless_sworker_n.cancel_scope.cancel()

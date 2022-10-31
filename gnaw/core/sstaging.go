@@ -111,8 +111,8 @@ func (s *SpecializedStager) AddFeedbackRemote(id uint, conn net.Conn, importTid 
 	s.muA.Lock()
 	s.chApprovals[id] = chA
 	s.feedbacks[id] = r
-	r.sendAck()
 	s.muA.Unlock()
+	s.sendAck(r.sender)
 	go r.sendLoop()
 	go r.recvLoop()
 }
@@ -132,12 +132,16 @@ func (s *SpecializedStager) RemoveFeedbackRemote(id uint) {
 
 func (s *SpecializedStager) addSpecializedRemote(name string, res Resource, obj msgp.Raw, mgr ResourceManager, retryq chan<- Task, conn net.Conn) *SpecializedRemote {
 	chR := make(chan ResultMsg, 16)
-	r := newSpecializedRemote(name, res, mgr, retryq, conn, s.approvalMux, chR, func() { s.removeSpecializedRemote(name) })
 	s.muR.Lock()
+	if _, ok := s.chRStatus[name]; ok { // we could receive the same reg request for backendless sworker from multiple frontends
+		s.muR.Unlock()
+		return nil
+	}
 	s.chRStatus[name] = chR
 	s.sworkerArgs[name] = obj
-	s.announceSpecializedRemote(name, obj)
+	s.announceSpecializedRemote(name, obj) // let frontend start the sworker client before making this sworker available
 	s.muR.Unlock()
+	r := newSpecializedRemote(name, res, mgr, retryq, conn, s.approvalMux, chR, func() { s.removeSpecializedRemote(name) })
 	return r
 }
 
@@ -150,8 +154,20 @@ func (s *SpecializedStager) removeSpecializedRemote(name string) {
 	s.muR.Unlock()
 }
 
-// Inform frontend about its asociated ID and the currently connected SpecializedRemote
+// Inform frontend about its asociated ID
 func (s *SpecializedStager) SendSynAck(snd *msgp.Writer, id uint) (err error) {
+	name := strconv.Itoa(int(id))
+	if err = (&ControlMsg{Cmd: "hsSynAck", Name: &name}).EncodeMsg(snd); err != nil {
+		return
+	}
+	if err = snd.Flush(); err != nil {
+		return
+	}
+	return
+}
+
+// Inform frontend about currently connected SpecializedRemote
+func (s *SpecializedStager) sendAck(snd *msgp.Writer) (err error) {
 	s.muR.RLock()
 	defer s.muR.RUnlock()
 	o := msgp.AppendMapHeader(nil, uint32(len(s.sworkerArgs)))
@@ -163,9 +179,8 @@ func (s *SpecializedStager) SendSynAck(snd *msgp.Writer, id uint) (err error) {
 			return
 		}
 	}
-	name := strconv.Itoa(int(id))
 	obj := msgp.Raw(o)
-	if err = (&ControlMsg{Cmd: "hsSynAck", Name: &name, Obj: &obj}).EncodeMsg(snd); err != nil {
+	if err = (&ControlMsg{Cmd: "hsAck", Obj: &obj}).EncodeMsg(snd); err != nil {
 		return
 	}
 	if err = snd.Flush(); err != nil {
@@ -220,19 +235,6 @@ func newFeedbackRemote(id uint, importTid tidImportFn, conn net.Conn, chApproval
 		conn:       conn,
 		sender:     msgp.NewWriter(conn),
 		importTid:  importTid,
-	}
-}
-
-// First msg to the frontend; declare readiness
-func (w *feedbackRemote) sendAck() {
-	logger := log.Error().Uint("id", w.id)
-	if err := (&ControlMsg{Cmd: "hsAck"}).EncodeMsg(w.sender); err != nil {
-		logger.Err(err).Msg("chApprovalRStatus handshake ack failed")
-		return
-	}
-	if err := w.sender.Flush(); err != nil {
-		logger.Err(err).Msg("chApprovalRStatus handshake ack failed")
-		return
 	}
 }
 

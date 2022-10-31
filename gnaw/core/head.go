@@ -397,7 +397,7 @@ func (mgr *GrainManager) runAPI(ctx context.Context, url string, strawmanSwarm i
 		var msg ControlMsg
 		err = msg.DecodeMsg(rcv)
 		if err != nil {
-			log.Error().Interface("conn", conn).Err(err).Msg("Error handling the first packet")
+			log.Error().Stringer("raddr", conn.RemoteAddr()).Err(err).Msg("Error handling the first packet")
 			conn.Close()
 			continue
 		}
@@ -409,9 +409,11 @@ func (mgr *GrainManager) runAPI(ctx context.Context, url string, strawmanSwarm i
 			continue // keep this connection
 		case "SRG": // specialized worker registration
 			res := ResFromMsg(msg.Res)
-			log.Info().Str("wname", *msg.Name).Stringer("res", res).Msg("Worker joined")
-			mgr.register(stager.addSpecializedRemote(*msg.Name, res, *msg.Obj, mgr, ge.prjobq, conn))
-			continue // keep this connection FIXME: if not backendless
+			if sr := stager.addSpecializedRemote(*msg.Name, res, *msg.Obj, mgr, ge.prjobq, conn); sr != nil {
+				log.Info().Str("wname", *msg.Name).Stringer("res", res).Msg("Worker joined")
+				mgr.register(sr)
+				continue // keep this connection
+			}
 		case "REG":
 			// passive worker, not implemented yet
 		case "UNR":

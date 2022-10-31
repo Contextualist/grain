@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 from .contextvar import GVAR
 from .util import timeblock, pickle_dumps, pickle_loads, WaitGroup, nullacontext, optional_cm, make_prependable, load_contextmod, load_mod, as_daemon
 from .resource import Resource, ZERO, Reject
-from .pair import SocketChannel, SocketChannelAcceptor
+from .pair import SocketChannel, SocketChannelAcceptor, notify
 from .subproc import subprocess_pool_daemon, BrokenSubprocessError
 from .stat import log_event, log_timestart, log_timeend, stat_logger, ls_worker_res, reg_probe, collect_probe
 
@@ -243,24 +243,6 @@ class GrainManager:
                 w.res = Reject(w.res)
                 self._n.start_soon(_wait_n_unreg, w)
 
-    async def backendless_sworker_manager(self, task_status=trio.TASK_STATUS_IGNORED):
-        registered_stype = set()
-        async with trio.open_nursery() as self.backendless_sworker_n:
-            for sw_conf in self.sworker_config:
-                stype = sw_conf.specialized_type
-                registered_stype.add(stype)
-                sw_mod = load_mod(stype)
-                if not sw_mod.GRAIN_SWORKER_CONFIG.get("BACKENDLESS", False):
-                    continue
-                sw_info = await self.backendless_sworker_n.start(as_daemon, sw_mod.grain_run_sworker())
-                res = Resource.from_dict({
-                    'Node': dict(N=sw_conf.script.cores, M=sw_conf.script.memory),
-                    'WTime': dict(T=sw_conf.script.walltime),
-                    **sw_conf.res,
-                })
-                self.pool.append(GrainSpecializedRemote(sw_info.pop("name"), res, None, dict(_stype=stype, **sw_info)))
-            task_status.started(registered_stype)
-
     async def worker_manager(self, registered_stype, task_status=trio.TASK_STATUS_IGNORED):
         async with trio.open_nursery() as _n, \
                    SocketChannelAcceptor(self.listen_addr, _n=_n) as self.soacceptor:
@@ -304,7 +286,10 @@ class GrainManager:
                         logger.warning(f"worker manager received unknown command {cmd} from {_c.host}")
 
     async def __aenter__(self):
-        registered_stype = await self._n.start(self.backendless_sworker_manager)
+        registered_stype, _, self.backendless_sworker_n = await self._n.start(
+            backendless_sworker_manager,
+            self.sworker_config, self.listen_addr,
+        )
         await self._n.start(self.worker_manager, registered_stype)
 
     async def aclose(self):
@@ -318,6 +303,36 @@ class GrainManager:
     async def __aexit__(self, *exc):
         await self.aclose()
         return False
+
+
+async def backendless_sworker_manager(sworker_config, manager_api, task_status=trio.TASK_STATUS_IGNORED):
+    registered_stype = set()
+    backendless_stype = set()
+    async with trio.open_nursery() as backendless_sworker_n:
+        for sw_conf in sworker_config:
+            stype = sw_conf.specialized_type
+            registered_stype.add(stype)
+            sw_mod = load_mod(stype)
+            if not sw_mod.GRAIN_SWORKER_CONFIG.get("BACKENDLESS", False):
+                continue
+            backendless_stype.add(stype)
+            # Backendless sworker's `grain_run_sworker` should be a trivial context for returning `sw_info`
+            sw_info = await backendless_sworker_n.start(as_daemon, sw_mod.grain_run_sworker())
+            resd = dict()
+            if sw_conf.script.cores or sw_conf.script.memory:
+                resd["Node"] = dict(N=sw_conf.script.cores, M=sw_conf.script.memory)
+            if sw_conf.script.walltime:
+                resd["WTime"] = dict(T=sw_conf.script.walltime, countdown=True)
+            res = Resource.from_dict({
+                **resd,
+                **sw_conf.res,
+            })
+            await notify(
+                manager_api,
+                dict(cmd="SRG", name=sw_info.pop("name"), res=res, obj=dict(_stype=stype, **sw_info)),
+                seg=True,
+            )
+        task_status.started((registered_stype, backendless_stype, backendless_sworker_n))
 
 
 class GrainExecutor:

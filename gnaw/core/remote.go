@@ -229,12 +229,11 @@ func (w *SpecializedRemote) close() {
 	// assume that w.chInput will not be passed in data during and after
 	// this function call
 	w.closing = true
-	if w.conn != nil {
-		bye, _ := (&ControlMsg{Cmd: "FIN"}).MarshalMsg(nil)
-		w.mu.Lock()
-		_, _ = w.conn.Write(bye)
-		w.mu.Unlock()
-	}
+	// for backendless sworker, w.conn is already closed and the following errs silently
+	bye, _ := (&ControlMsg{Cmd: "FIN"}).MarshalMsg(nil)
+	w.mu.Lock()
+	_, _ = w.conn.Write(bye)
+	w.mu.Unlock()
 
 	w.closeSend()
 
@@ -242,11 +241,9 @@ func (w *SpecializedRemote) close() {
 	w.unregister()
 	<-w.recvQuit
 
-	if w.conn != nil {
-		w.mu.Lock()
-		_ = w.conn.Close()
-		w.mu.Unlock()
-	}
+	w.mu.Lock()
+	_ = w.conn.Close()
+	w.mu.Unlock()
 
 	// migrate all pending tasks once the pending gets stable
 	w.ejectPending()

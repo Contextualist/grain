@@ -189,9 +189,10 @@ func run(ctx context.Context) {
 		// Handshakes:
 		// frontend --cmd: chTaskResult, name: remote_name--> Gnaw
 		// [Gnaw alloc a dock for frontend]
-		// Gnaw --obj: { sworker_name: sworker_kws }, name: dock_id--> frontend
-		// (optional) [frontend starts sremotes]
-		// (optional) frontend --cmd: chApprovalFeedback, name: dock_id--> Gnaw
+		// Gnaw --name: dock_id--> frontend
+		// frontend --cmd: chApprovalFeedback, name: dock_id--> Gnaw
+		// Gnaw --obj: { sworker_name: sworker_kws }--> frontend
+		// [frontend starts clients for sworkers, then starts sending jobs]
 		rcv := msgp.NewReader(conn)
 		var hsmsg core.ControlMsg
 		err = hsmsg.DecodeMsg(rcv)
