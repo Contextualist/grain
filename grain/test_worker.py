@@ -19,7 +19,7 @@ async def test_worker():
     async with trio.open_nursery() as _n, \
                GrainExecutor(_n=_n, nolocal=True) as exer:
         GVAR.instance = "test-worker-A"
-        _n.start_soon(grain_worker, Memory(4)&WTime(T=10,countdown=True), "tcp://localhost:4242")
+        _n.start_soon(grain_worker, Memory(4)&WTime(T=10,countdown=True), exer.mgr.listen_addr)
         for i in range(N):
             exer.submit(Memory(2), addone, i)
     results = [None] * N

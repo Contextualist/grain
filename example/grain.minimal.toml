@@ -4,9 +4,6 @@
 
 system = "slurm"
 
-[worker]
-dial = "tcp://elogin1.bigred3.uits.iu.edu:4242"
-
 [script]
 queue = "general"
 cores = 48

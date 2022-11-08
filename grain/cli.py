@@ -125,12 +125,12 @@ def global_options(fn=None, conf_mode=''):
 def gen_script(conf, is_worker=False):
     scriptc = conf.script
     rmem = int(scriptc.memory/15*14)
-    scriptc.walltime, rwalltime = norm_wtime(scriptc.walltime)
     if is_worker:
         res = dict()
         if scriptc.cores or rmem:
             res["Node"] = dict(N=scriptc.cores, M=rmem)
-        if rwalltime:
+        if scriptc.walltime:
+            scriptc.walltime, rwalltime = norm_wtime(scriptc.walltime)
             res["WTime"] = dict(T=rwalltime, countdown=True)
         scriptc.res_str = json.dumps(dict(
             **res,

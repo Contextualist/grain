@@ -20,7 +20,7 @@ class Script:
     setup_cleanup: str = ""
     shebang:       str = "#!/bin/bash"
     queue:         str = "''"
-    walltime:      str = "12:00:00"
+    walltime:      str = ""
     extra_args:    List[str] = Factory(list)
 
 @define
@@ -35,6 +35,10 @@ class Config:
     script:        Script = Factory(Script)
     contextmod:    str = ""
     custom_system: Optional[CustomSystem] = None
+    address:       str = ""
+    def __attrs_post_init__(self):
+        if not self.address:
+            self.address = f"edge://{Path.home()}/.local/share/edge-file-default"
 
 @define
 class Gnaw:
@@ -50,21 +54,26 @@ class Head(Config):
     name:          str = "grain_head"
     main_log_file: str = "/dev/null"
     log_file:      str = ""
-    listen:        str = "tcp://:4242"
+    listen:        str = ""
     cmd:           str = ""
     gnaw:          Gnaw = Factory(Gnaw)
+    def __attrs_post_init__(self):
+        Config.__attrs_post_init__(self)
+        if not self.listen:
+            self.listen = self.address
 
 @define
 class Worker(Config):
     specialized_type: str = ""
     name:             str = "w{{HHMMSS}}"
     log_file:         str = "w{{HHMMSS}}.log"
-    dial:             str = "UNSET"
+    dial:             str = ""
     cli_dial:         str = ""
     res:              Dict[str, Any] = Factory(dict)
     def __attrs_post_init__(self):
-        if self.dial == "UNSET":
-            raise ValueError("Config `worker.dial` is not set")
+        Config.__attrs_post_init__(self)
+        if not self.dial:
+            self.dial = self.address
         if not self.cli_dial:
             self.cli_dial = self.dial
 
@@ -74,10 +83,7 @@ class GenericConfig:
     worker: Worker
 
 _loose_filler = dict(
-    system="",
     head=dict(gnaw=dict(enabled=False)), # disable gnaw for test purpose
-    worker=dict(dial=""),
-    script=dict(cores=0, memory=0, setup_cleanup=""),
 )
 
 def ChainMapNested(d0, d1):
@@ -100,6 +106,8 @@ def load_conf(config=None, mode: Literal['', 'head', 'worker']=''):
             exit(1)
         if type(config) is StringIO: # internal config fragment
             conf = ChainMap(conf, _loose_filler)
+    conf.setdefault('head', {})
+    conf.setdefault('worker', {})
     if mode == 'worker':
         return cattr.structure(ChainMapNested(conf['worker'], conf), Worker)
     elif mode == 'head':

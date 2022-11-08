@@ -18,6 +18,11 @@ system = "" # optional
 # Can be overriden by `head.contextmod` and `worker.contextmod`.
 contextmod = "" # optional
 
+# Unified address for head-worker discorvery and head-CLI communication.
+# Only applicable to protocols with symmetrical dial/listen address
+# (i.e. Bridge and Edge)
+address = "edge://$HOME/.local/share/edge-file-default"
+
 
 [head]
 
@@ -35,7 +40,7 @@ log_file = "" # optional, default (i.e. empty str) to stdout
 # TCP: "tcp://:{port}"
 # Bridge: "bridge://{key}@{bridge_addr}:{bridge_port}[?iface={interface}]"
 # Edge: "edge://{path_to_edge_file}"
-listen = "tcp://:4242" # optional
+listen = "" # optional, default to `address`
 
 # Script to invoke your entrypoint. It is used to
 # start the head process for `grain start`.
@@ -84,11 +89,11 @@ log_file = "./w{{HHMMSS}}.log" # optional
 # TCP: "tcp://{addr}:{port}"
 # Bridge: "bridge://{key}@{bridge_addr}:{bridge_port}[?iface={interface}]"
 # Edge: "edge://{path_to_edge_file}"
-dial = "tcp://elogin1.bigred3.uits.iu.edu:4242"
+dial = "" # optional, default to `address`
 
 # Grain CLI uses this URL to send queries and commands
 # to the head.
-cli_dial = "tcp://elogin1.bigred3.uits.iu.edu:4242" # optional, default to `worker.dial`
+cli_dial = "" # optional, default to `worker.dial`
 
 
 # Specify resources other than cores, memory, or walltime
@@ -103,7 +108,7 @@ Capacity = { V=8 }
 
 shebang = "#!/bin/bash" # optional
 queue = "''" # optional
-walltime = "12:00:00" # optional
+walltime = "" # optional
 cores = 0 # optional
 memory = 0 # optional
 extra_args = [] # optional
