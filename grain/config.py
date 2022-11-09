@@ -38,7 +38,8 @@ class Config:
     address:       str = ""
     def __attrs_post_init__(self):
         if not self.address:
-            self.address = f"edge://{Path.home()}/.local/share/edge-file-default"
+            (_local_share := Path.home()/".local/share").mkdir(mode=0o755, parents=True, exist_ok=True)
+            self.address = f"edge://{_local_share}/edge-file-default"
 
 @define
 class Gnaw:
