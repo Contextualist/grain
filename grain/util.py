@@ -16,7 +16,7 @@ def timeblock(text="this block", enter=False):
             self.st = timer()
             return self
         def __exit__(self, *exc):
-            print(f"Time elapsed for {text}{' (incomplete)' if any(exc) else ''}: {timer()-self.st}")
+            print(f"Time elapsed for {text}{' (incomplete)' if any(exc) else ''}: {timer()-self.st:.3f}s")
             return False
     return TimeblockCtx()
 
