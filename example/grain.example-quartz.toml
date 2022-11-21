@@ -1,11 +1,9 @@
 system = "slurm"
 
-[head]
-listen = "edge:///N/slate/USER/grain-edge-qz" # FIXME: fill in username
+address = "edge:///N/slate/USER/grain-edge-qz" # FIXME: fill in username
 
 [worker]
 log_file = "./w{{HHMMSS}}-qz.log"
-dial = "edge:///N/slate/USER/grain-edge-qz" # FIXME: fill in username
 
 [script]
 queue = "debug"

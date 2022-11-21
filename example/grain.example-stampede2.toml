@@ -1,11 +1,9 @@
 system = "slurm"
 
-[head]
-listen = "edge:///work2/USER/grain-edge-sp2" # FIXME: fill in username
+address = "edge:///work2/USER/grain-edge-sp2" # FIXME: fill in username
 
 [worker]
 log_file = "./w{{HHMMSS}}-sp2.log"
-dial = "edge:///work2/USER/grain-edge-sp2" # FIXME: fill in username
 
 [script]
 queue = "skx-dev"

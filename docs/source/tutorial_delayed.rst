@@ -94,8 +94,8 @@ Resource binding
 Also notice that the ``add`` tasklet here takes no resource to finish. In reality,
 computationally intesive jobs often occupy some resource (e.g. CPU, memory, GPU) of a
 worker machine, so we would like to specify resource and demands for each worker and
-job. In the following code, we add ``rpw=Cores([0,1])`` (resource per worker: CPU
-cores 0,1. Now we only have one local worker) for ``run`` to specify the resources
+job. In the following code, we add ``local=Cores([0,1])`` (resource for local worker:
+CPU cores 0,1) for ``run`` to specify the resources
 owned by local worker. Before calling the delayed function ``add``, we bind a resource
 demand to it using the ``@`` operator (``@`` means dot product in Python, but here we
 just redefine it as a handy way to specify resources). ``Cores(1)`` means the function
@@ -113,7 +113,7 @@ needs one CPU core to run. ::
     run(
         partial(elevated_sum, [1,2,3]),
         config_file=False,
-        rpw=Cores([0,1]),
+        local=Cores([0,1]),
     )
 
 .. code-block:: none
@@ -186,7 +186,7 @@ it. A solution is presented below::
     run(
         main,
         config_file=False,
-        rpw=Cores([0,1]),
+        local=Cores([0,1]),
     )
 
 .. code-block:: none
@@ -250,15 +250,6 @@ started quickly.
 
 - ``system``: the HPC job management system (slurm or pbs)
 
-- ``head.listen``: the listening address of the head. You can use the built-in Edge
-  protocol, which relies on network filesystem (disk space accessible to all nodes in a
-  supercomputing cluster). Set it to ``edge://PATH/TO/EDGE-FILE`` (e.g. If the network
-  filesystem is on ``/N/slate/USER``, set ``edge:///N/slate/USER/grain-edge-0``).
-
-- ``worker.dial``: the address worker uses to find head. If you are using the Edge
-  protocol, head and workers use the same file to locate each others, so fill in the
-  same value as ``head.listen``.
-
 - ``script.[queue,walltime,cores,memory]``: These are the fields to be filled in when
   you are writing a HPC job script. Depending on your cluster they should have different
   values. It is recommend to start with a debug queue and short walltime (You can launch
@@ -271,6 +262,12 @@ started quickly.
   source profiles, make scratch dirs, etc.) and commands to clean up after a worker quits
   (e.g. delete scratch dirs, transfer usage analytics). Prepend ``defer`` to mark a command
   to be clean up command (e.g. ``defer rm -r /tmp/scratch``).
+
+.. note:: By default, Grain uses the built-in Edge protocol for head, worker, CLI tools to
+   communicate with each others. Edge relies on a network filesystem (disk space accessible
+   to all nodes in a supercomputing cluster). The default "assembly point" is
+   ``$HOME/.local/share/edge-file-default``. If your network filesystem locates somewhere else,
+   set ``address = "edge:///absolute/path/to/your/nfs/edge-filename"``.
 
 There are more options in the reference config, but now you should be all set to run
 things on clusters. You may want to name the file ``grain.toml`` and put it in the
@@ -312,16 +309,16 @@ and you can see where the job is running. ::
 
     run(
         main,
-        nolocal=True,
     )
 
 If you run the code above, you should see your program pause right after printing "Waiting
-for calculation to start ...". Because we disable the local worker with option ``nolocal=True``,
-there will be no calculation resource available until remote workers join.
+for calculation to start ...". Because we did not enable the local worker (i.e. not passing
+``local=...`` to ``run``), there will be no calculation resource available until remote
+workers join.
 
 .. note:: In actual calculations, if you are running Grain head on a login node, it is
-   recommanded to set local worker's resource to ZERO (i.e. ``nolocal=True`` for
-   ``grain.delayed.run``) so that no intensive calculation will be executed locally.
+   recommanded to not enable local worker for ``grain.delayed.run`` so that no intensive
+   calculation will be executed locally.
 
 So let's launch some workers. On another shell, run the following to submit 2 workers:
 
@@ -345,8 +342,8 @@ Try changing the code with different resources assign to the jobs, add delays in
    done.  That is because the scheduler is still running in the background, so that if you
    start another calculation mission shortly, the workers can be reused. You can also run
    multiple missions concurrently, sharing a swarm of workers.  Missions (i.e. the head
-   processes) running on the same machine with the same ``head.listen`` config will reuse the
-   scheduler.
+   processes) running on the same machine with the same ``head.listen`` / ``address``
+   config will reuse the scheduler.
 
 What's next?
 ------------
