@@ -29,7 +29,9 @@ Delayed function and object
 Let's say you have a function doing expensive calculations and another function
 doing relatively cheap reduce-like operations. We will like to make them
 parallelizable, so we make them **delayed functions** (or we can call it a
-"tasklet"). ::
+"tasklet").
+
+.. code-block:: python
 
     from grain.delayed import delayed, run
     from grain import GVAR
@@ -66,9 +68,9 @@ parallelizable, so we make them **delayed functions** (or we can call it a
    done adding to 2
    done adding to 3
    elevated_sum([1, 2, 3]) = 9
-   worker elogin1(local) starts cleaning up
-   worker elogin1(local) clear
-   Time elapsed for all jobs: 0.3028046750696376
+   worker ...(local) starts cleaning up
+   worker ...(local) clear
+   Time elapsed for all jobs: 0.303s
 
 We can observe that the three ``add`` tasklets run in parallel (You should see time
 elaspse for all tasklets roughly equal to that of the tasklet taking the longest
@@ -92,16 +94,31 @@ Resource binding
 ----------------
 
 Also notice that the ``add`` tasklet here takes no resource to finish. In reality,
-computationally intesive jobs often occupy some resource (e.g. CPU, memory, GPU) of a
-worker machine, so we would like to specify resource and demands for each worker and
+computationally intesive jobs often occupy some resources (e.g. CPU, memory, GPU) of a
+worker machine, so we would like to specify resources and demands for each worker and
 job. In the following code, we add ``local=Cores([0,1])`` (resource for local worker:
 CPU cores 0,1) for ``run`` to specify the resources
 owned by local worker. Before calling the delayed function ``add``, we bind a resource
 demand to it using the ``@`` operator (``@`` means dot product in Python, but here we
-just redefine it as a handy way to specify resources). ``Cores(1)`` means the function
-needs one CPU core to run. ::
+just redefine it as a handy way to attach resources to jobs). ``Cores(1)`` indicates
+that the function needs one CPU core to run.
 
+.. code-block:: python
+   :emphasize-lines: 3, 18, 25
+
+    from grain.delayed import delayed, run
+    from grain import GVAR
     from grain.resource import Cores
+    from functools import partial
+
+    @delayed
+    async def add(x):
+        # import inside the function because a tasklet should not have global reference
+        import trio
+        print(f"start adding to {x} with resource {GVAR.res}")
+        await trio.sleep(x/10) # simulate lenthy calculation
+        print(f"done adding to {x}")
+        return x + 1
 
     async def elevated_sum(l):
         s_ = 0
@@ -126,16 +143,16 @@ needs one CPU core to run. ::
    done adding to 2
    done adding to 3
    elevated_sum([1, 2, 3]) = 9
-   worker elogin1(local) starts cleaning up
-   worker elogin1(local) clear
-   Time elapsed for all jobs: 0.40786700299941003
+   worker ...(local) starts cleaning up
+   worker ...(local) clear
+   Time elapsed for all jobs: 0.408s
 
 Note that tasklet 3 only starts after tasklet 1 finishes and yields one CPU core, because
-we only have two cores in total. In the case of CPU core, request is non-specific (any 1
-CPU core), while the assigned resources are (Core 0 or core 1).
+we only have two cores in total. In the case of CPU core, request (any 1 CPU core) is
+non-specific, while the assigned resources (core 0 or core 1) are specific.
 
-Grain only inform the function at run time what resources are allocated for it. However,
-Grain never enforces that constraint. It is the responsibility of the function itself to
+Grain inform the function at run time what resources are allocated for it. However, Grain
+never enforces those constraints. It is the responsibility of the function itself to
 follow the rule. External programs usually have various ways to manage their own CPU,
 memory, etc. consumptions, so the users are expected to inform them in their ways. In this
 example, we are only demonstrating how Grain manage the resources. As you can see, function
@@ -164,9 +181,23 @@ resources.
 
 Now, suppose we want to run the presumably cheap "branch" function ``elevated_sum`` for several
 times, locally and in parallel. How will you modify the code? You can pause and think about
-it. A solution is presented below::
+it. A solution is presented below
 
-    from grain.delayed import each
+.. code-block:: python
+   :emphasize-lines: 1, 14, 22-27, 30
+
+    from grain.delayed import delayed, each, run
+    from grain import GVAR
+    from grain.resource import Cores
+
+    @delayed
+    async def add(x):
+        # import inside the function because a tasklet should not have global reference
+        import trio
+        print(f"start adding to {x} with resource {GVAR.res}")
+        await trio.sleep(x/10) # simulate lenthy calculation
+        print(f"done adding to {x}")
+        return x + 1
 
     @delayed
     async def elevated_sum(l):
@@ -213,9 +244,9 @@ it. A solution is presented below::
    elevated_sum([4, 5, 6]) = 18
    done adding to 3
    elevated_sum([1, 2, 3]) = 9
-   worker elogin1(local) starts cleaning up
-   worker elogin1(local) clear
-   Time elapsed for all jobs: 2.309883333975449
+   worker ...(local) starts cleaning up
+   worker ...(local) clear
+   Time elapsed for all jobs: 2.310s
 
 The order of execution for the three ``elevated_sum`` might be different each time.
 
@@ -237,9 +268,9 @@ Workers, residing on computaional node of a cluster, communicate with Grain's
 head/scheduler to make parallel computaion across clusters possible. Unlike Dask,
 we have one worker per machine / computation node. The worker have access to all
 resources on the machine. When a worker connects to Grain's head, it will inform head
-the resources they own. Grain's head dispatches jobs to it as long as it has enough
+the resources they own. Grain's head dispatches jobs to a worker as long as it has enough
 resources for the jobs. The jobs are async functions (e.g. of external processes), so
-a worker can monitor the status of multiple execution concurrently.
+a worker can monitor the status of multiple executions concurrently.
 
 For Grain to recognize your system, you need to have a profile/config. Full reference
 and samples of Grain's config syntax can be found in the
@@ -263,9 +294,9 @@ started quickly.
   (e.g. delete scratch dirs, transfer usage analytics). Prepend ``defer`` to mark a command
   to be clean up command (e.g. ``defer rm -r /tmp/scratch``).
 
-.. note:: By default, Grain uses the built-in Edge protocol for head, worker, CLI tools to
-   communicate with each others. Edge relies on a network filesystem (disk space accessible
-   to all nodes in a supercomputing cluster). The default "assembly point" is
+.. note:: By default, Grain uses the built-in :ref:`Edge protocol<edge-protocol>` for head, worker,
+   and CLI tools to communicate with each others. Edge relies on a network filesystem (disk space
+   accessible to all nodes in a supercomputing cluster). The default "assembly point" is
    ``$HOME/.local/share/edge-file-default``. If your network filesystem locates somewhere else,
    set ``address = "edge:///absolute/path/to/your/nfs/edge-filename"``.
 
@@ -281,13 +312,15 @@ Now, before you proceed, let's do a final check:
 
    grain up --dry
 
-This command generates the worker submission script with your config. Instead of submiting
-it right away, the dry run print out the script for your inspection. You can see how each
+This command generates a worker submission script with your config. Instead of submiting
+it right away, the dry run prints out the script for your inspection. You can see how each
 field in your config is represented here and check if anything does not look right.
 
 
 When you are ready, run the following code. The tasklet here simply checks for the hostname,
-and you can see where the job is running. ::
+and you can see where the job is running.
+
+.. code-block:: python
 
     from grain.delayed import delayed, each, run
     from grain.resource import Node
@@ -338,7 +371,7 @@ Try changing the code with different resources assign to the jobs, add delays in
 
 .. note::
 
-   You might notice that the workers do not leave immediately after all the computation is
+   You might notice that the workers do not shutdown immediately after all computations are
    done.  That is because the scheduler is still running in the background, so that if you
    start another calculation mission shortly, the workers can be reused. You can also run
    multiple missions concurrently, sharing a swarm of workers.  Missions (i.e. the head

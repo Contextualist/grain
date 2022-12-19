@@ -341,8 +341,7 @@ async def boot(subtasks, args, kwargs):
         kwargs['rpw'] = local
     config_file = kwargs.pop('config_file', None)
     config = load_conf(config_file, 'head')
-    sworker_config = load_conf_sworker(config_file)
-    kwargs['sworker_config'] = sworker_config
+    kwargs['sworker_config'] = load_conf_sworker(config_file) if config_file is not False else []
     Exer = RemoteExecutor
     if local or not config.gnaw.enabled:
         Exer = GrainExecutor

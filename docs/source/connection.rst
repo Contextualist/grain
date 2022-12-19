@@ -76,6 +76,7 @@ Rendezvous specification
 
 TODO
 
+.. _edge-protocol:
 
 Edge protocol
 -------------
@@ -104,6 +105,7 @@ might encounter connection issues if any party is behind a NAT or firewall.
 Edge file specification
 ~~~~~~~~~~~~~~~~~~~~~~~
 
+Edge file is managed by the protocol and should not be edited manually.
 Edge file is a JSON file with the following schema::
 
    class Listener:
