@@ -4,7 +4,7 @@ from math import inf as INFIN
 from functools import partial
 from urllib.parse import urlparse, parse_qsl
 
-from .conn import open_tcp_stream_to_head, serve_tcp_p2p
+from .conn import open_tcp_stream_to_head, serve_tcp_p2p, make_ipaddr
 from .conn_msgp import iter_packet, send_packet
 from .conn2 import open_tcp_edge_stream, serve_tcp_edge
 
@@ -116,9 +116,7 @@ class SocketChannelAcceptor(SocketReceiveChannel):
     async def _handler(self, so):
         # TODO: support unix server
         host, port, *_ = so.socket.getpeername()
-        if so.socket.proto == 6:
-            host = f"[{host}]"
-        c = SocketChannel(f"tcp://{host}:{port}", _so=so)
+        c = SocketChannel(f"tcp://{make_ipaddr(host, port)}", _so=so)
         self.in_s.send_nowait(c)
         await c._handler_standalone(so) # to have the same lifetime as c
     accept = SocketReceiveChannel.receive

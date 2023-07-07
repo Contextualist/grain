@@ -11,7 +11,7 @@ import fcntl
 import logging
 logger = logging.getLogger(__name__)
 
-from .conn import use_or_open_nursery, _run_handler
+from .conn import use_or_open_nursery, _run_handler, make_ipaddr
 
 HOST = socket.gethostname()
 
@@ -126,9 +126,6 @@ async def try_urls(urls, happy_eyeballs_delay=0.250):
             with trio.move_on_after(happy_eyeballs_delay):
                 await attempt_failed.wait()
     return winning_stream
-
-def make_ipaddr(addr, port):
-    return f"[{addr}]:{port}" if ':' in addr else f"{addr}:{port}"
 
 async def listen_all_iface():
     listeners = {

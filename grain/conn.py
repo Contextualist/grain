@@ -4,8 +4,8 @@ from trio import socket
 import struct
 import io
 from contextlib import contextmanager, asynccontextmanager
-from functools import partial
 from math import inf as INFIN
+from urllib.parse import urlsplit
 import logging
 logger = logging.getLogger(__name__)
 
@@ -68,18 +68,19 @@ async def init_conn(bridge, iface=""):
             s_acp = await bound_socket(('', priv_port)) # for accept
             break
         except OSError: # NOTE: albeit SO_REUSEADDR set, bind still occassionally fails
-            logger.debug(f"cannot bind to private addr {priv_host}:{priv_port}, retry")
+            logger.debug(f"cannot bind to private addr {make_ipaddr(priv_host, priv_port)}, retry")
             sa.close()
             await trio.sleep(0.1)
             continue
     else:
         raise OSError("failed to bind to a local address")
-    logger.debug(f"self's private addr {priv_host}:{priv_port}")
-    return trio.SocketStream(sa), f"{priv_host}:{priv_port}", s_acp, s_cona, s_conb
+    priv_addr = make_ipaddr(priv_host, priv_port)
+    logger.debug(f"self's private addr {priv_addr}")
+    return trio.SocketStream(sa), priv_addr, s_acp, s_cona, s_conb
 
 async def hole_punching(peer, s_acp, s_cona, s_conb):
     peer_publ_addr, peer_priv_addr = peer
-    peer_publ_addr, peer_priv_addr = parse_addr(peer_publ_addr), parse_addr(peer_priv_addr)
+    peer_publ_addr, peer_priv_addr = parse_ipaddr(peer_publ_addr), parse_ipaddr(peer_priv_addr)
     logger.debug(f"peer's public addr {peer_publ_addr}, private addr {peer_priv_addr}")
 
     win_s, win_r = trio.open_memory_channel(1)
@@ -141,10 +142,12 @@ def get_priv_host(iface):
     i = psutil.net_if_addrs()[iface]
     return next(x.address for x in i if x.family == socket.AF_INET)
 
-def parse_addr(host_port):
-    host, port = host_port.split(':')
-    if not host: host = "0.0.0.0"
-    return host, int(port)
+def parse_ipaddr(host_port):
+    r = urlsplit('//' + host_port)
+    return r.hostname or "0.0.0.0", r.port
+
+def make_ipaddr(host, port):
+    return f"[{host}]:{port}" if ':' in host else f"{host}:{port}"
 
 async def send_packet(s: trio.SocketStream, data):
     await s.send_all(struct.pack(FMT, len(data)) + data)
