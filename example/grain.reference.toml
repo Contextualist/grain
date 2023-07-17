@@ -95,6 +95,10 @@ dial = "" # optional, default to `address`
 # to the head.
 cli_dial = "" # optional, default to `worker.dial`
 
+# Specialized worker module name.
+# If set, enable specialized worker with the module.
+specialized_type = "" # optional
+
 
 # Specify resources other than cores, memory, or walltime
 [worker.res] # optional

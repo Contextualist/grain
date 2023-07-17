@@ -26,6 +26,7 @@ commit messages provide better information for the features and fixes)
    util.rst
    advance.rst
    resource.rst
+   specialized_worker.rst
    connection.rst
 
 Work in progress:
