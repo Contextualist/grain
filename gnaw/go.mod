@@ -1,6 +1,6 @@
 module github.com/Contextualist/grain/gnaw
 
-go 1.19
+go 1.20
 
 require (
 	github.com/gofrs/flock v0.8.1

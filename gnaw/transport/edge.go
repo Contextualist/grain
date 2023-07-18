@@ -1,4 +1,4 @@
-//  Edge protocol: connection discovery depending on network filesystem only
+// Edge protocol: connection discovery depending on network filesystem only
 package transport
 
 import (
