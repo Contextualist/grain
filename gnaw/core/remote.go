@@ -14,7 +14,7 @@ type (
 	RemoteBase struct {
 		name    string
 		res     Resource
-		closing bool
+		closing atomic.Bool
 		health  int64
 
 		retryq  chan<- Task
@@ -142,7 +142,7 @@ func (w *RemoteBase) ejectPending() {
 }
 
 func (w *RemoteBase) health_dec(v int64) {
-	if w.closing || atomic.AddInt64(&w.health, -v) > 0 {
+	if w.isClosing() || atomic.AddInt64(&w.health, -v) > 0 {
 		return
 	}
 	log.Warn().Str("wname", w.name).Msg("Quit worker due to poor health")
@@ -158,8 +158,8 @@ func (w *RemoteBase) getName() string             { return w.name }
 func (w *RemoteBase) getRes() Resource            { return w.res }
 func (w *RemoteBase) getPending() *pendingTaskMap { return w.pending }
 func (w *RemoteBase) getInput() chan Task         { return w.chInput }
-func (w *RemoteBase) isClosing() bool             { return w.closing }
-func (w *RemoteBase) setClosing()                 { w.closing = true }
+func (w *RemoteBase) isClosing() bool             { return w.closing.Load() }
+func (w *RemoteBase) setClosing()                 { w.closing.Store(true) }
 
 type (
 	SpecializedRemote struct {
@@ -228,7 +228,7 @@ func (w *SpecializedRemote) batchCancel(pred taskPredicateFn) {
 func (w *SpecializedRemote) close() {
 	// assume that w.chInput will not be passed in data during and after
 	// this function call
-	w.closing = true
+	w.setClosing()
 	// for backendless sworker, w.conn is already closed and the following errs silently
 	bye, _ := (&ControlMsg{Cmd: "FIN"}).MarshalMsg(nil)
 	w.mu.Lock()

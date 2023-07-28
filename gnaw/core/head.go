@@ -129,7 +129,7 @@ func (w *Remote) recvLoop() {
 		var r ResultMsg
 		err := r.DecodeMsg(w.receiver)
 		if err != nil {
-			if !w.closing {
+			if !w.isClosing() {
 				log.Error().Str("wname", w.name).Err(err).Msg("Remote.recvLoop: read error")
 				w.health_dec(FULL_HEALTH)
 			}
@@ -168,7 +168,7 @@ func (w *Remote) batchCancel(pred taskPredicateFn) {
 func (w *Remote) close() {
 	// assume that w.chInput will not be passed in data during and after
 	// this function call
-	w.closing = true
+	w.setClosing()
 	bye, _ := (&ControlMsg{Cmd: "FIN"}).MarshalMsg(nil)
 	w.mu.Lock()
 	_, _ = w.conn.Write(bye)
