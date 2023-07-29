@@ -13,35 +13,30 @@ import (
 const STATSPAN = 15 * time.Minute
 
 type Stat struct {
-	completed          uint64
-	exception          uint64
-	lateResponse       uint64
-	lostOrLateResponse uint64
+	completed          atomic.Uint64
+	exception          atomic.Uint64
+	lateResponse       atomic.Uint64
+	lostOrLateResponse atomic.Uint64
 }
 
-func (s *Stat) Reset() *Stat {
-	s0 := new(Stat)
-	s0.completed = atomic.SwapUint64(&s.completed, 0)
-	s0.exception = atomic.SwapUint64(&s.exception, 0)
-	s0.lateResponse = atomic.SwapUint64(&s.lateResponse, 0)
-	s0.lostOrLateResponse = atomic.SwapUint64(&s.lostOrLateResponse, 0)
-	return s0
-}
+func (s *Stat) ResetAndLog() {
+	completed := s.completed.Swap(0)
+	exception := s.exception.Swap(0)
+	lateResponse := s.lateResponse.Swap(0)
+	lostOrLateResponse := s.lostOrLateResponse.Swap(0)
 
-func (s *Stat) Log() {
-	r := s.Reset()
 	b := new(strings.Builder)
 	b.WriteString("STAT: ")
-	if r.completed > 0 {
-		fmt.Fprintf(b, "completed: %d\t", r.completed)
+	if completed > 0 {
+		fmt.Fprintf(b, "completed: %d\t", completed)
 	}
-	if r.exception > 0 {
-		fmt.Fprintf(b, "error: %d\t", r.exception)
+	if exception > 0 {
+		fmt.Fprintf(b, "error: %d\t", exception)
 	}
-	if r.lateResponse > 0 {
-		fmt.Fprintf(b, "late_response: %d\t", r.lateResponse)
+	if lateResponse > 0 {
+		fmt.Fprintf(b, "late_response: %d\t", lateResponse)
 	}
-	if lost := r.lostOrLateResponse - r.lateResponse; lost > 0 {
+	if lost := lostOrLateResponse - lateResponse; lost > 0 {
 		fmt.Fprintf(b, "lost_response: %d\t", lost)
 	}
 	if b.Len() > 6 {
@@ -51,7 +46,7 @@ func (s *Stat) Log() {
 
 func StatLoop() {
 	for range time.Tick(STATSPAN) {
-		DefaultStat.Log()
+		DefaultStat.ResetAndLog()
 	}
 }
 

@@ -16,7 +16,7 @@ import (
 )
 
 func testPlain(t *testing.T, N, M int, workerf func(net.Conn, chan<- struct{})) {
-	t.Cleanup(DefaultStat.Log)
+	t.Cleanup(DefaultStat.ResetAndLog)
 	ge := newTestGrainExecutor()
 	chFin := make(chan struct{})
 	go func() {

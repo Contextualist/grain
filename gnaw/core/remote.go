@@ -15,7 +15,7 @@ type (
 		name    string
 		res     Resource
 		closing atomic.Bool
-		health  int64
+		health  atomic.Int64
 
 		retryq  chan<- Task
 		resultq chan<- ResultMsg // won't be used if nil
@@ -53,10 +53,9 @@ type (
 )
 
 func newRemoteBase(name string, res Resource, mgr ResourceManager, retryq chan<- Task, resultq chan<- ResultMsg) *RemoteBase {
-	return &RemoteBase{
+	r := &RemoteBase{
 		name:     name,
 		res:      res,
-		health:   FULL_HEALTH,
 		mgr:      mgr,
 		retryq:   retryq,
 		resultq:  resultq,
@@ -65,6 +64,8 @@ func newRemoteBase(name string, res Resource, mgr ResourceManager, retryq chan<-
 		sendQuit: make(chan struct{}),
 		recvQuit: make(chan struct{}),
 	}
+	r.health.Store(FULL_HEALTH)
+	return r
 }
 
 func (w *RemoteBase) predispatch(t Task) {
@@ -76,7 +77,7 @@ func (w *RemoteBase) predispatch(t Task) {
 			if !ok { // in rare cases, we receive the result right after this timeout get triggered
 				return
 			}
-			atomic.AddUint64(&DefaultStat.lostOrLateResponse, 1)
+			DefaultStat.lostOrLateResponse.Add(1)
 			log.Debug().Uint("tid", tid).Msg("resubmit due to 3 min pass timeout")
 			w.resubmit(tid, pt)
 		})
@@ -87,23 +88,23 @@ func (w *RemoteBase) predispatch(t Task) {
 func (w *RemoteBase) postreceive(r ResultMsg) {
 	pt, ok := w.pending.LoadAndDelete(r.Tid)
 	if !ok { // has been resubmmitted by the pending task's local timeout (pt.timeout)
-		atomic.AddUint64(&DefaultStat.lateResponse, 1)
+		DefaultStat.lateResponse.Add(1)
 		log.Info().Str("wname", w.name).Uint("tid", r.Tid).Msg("RemoteBase.postreceive: received phantom job's result")
 		return
 	}
 	switch r.Exception {
 	case "":
-		atomic.AddUint64(&DefaultStat.completed, 1)
-		atomic.StoreInt64(&w.health, FULL_HEALTH)
+		DefaultStat.completed.Add(1)
+		w.health.Store(FULL_HEALTH)
 		if w.resultq != nil {
 			w.resultq <- r
 		}
 		w.mgr.dealloc(w, pt.res)
 	case "UserCancelled":
-		atomic.AddUint64(&DefaultStat.exception, 1)
+		DefaultStat.exception.Add(1)
 		w.mgr.dealloc(w, pt.res) // sink task if it is cancelled by user
 	default:
-		atomic.AddUint64(&DefaultStat.exception, 1)
+		DefaultStat.exception.Add(1)
 		log.Debug().Uint("tid", r.Tid).Msg("resubmit due to exception")
 		if w.resultq != nil {
 			w.resultq <- r // notify back exception while handling resubmit
@@ -142,7 +143,7 @@ func (w *RemoteBase) ejectPending() {
 }
 
 func (w *RemoteBase) health_dec(v int64) {
-	if w.isClosing() || atomic.AddInt64(&w.health, -v) > 0 {
+	if w.isClosing() || w.health.Add(-v) > 0 {
 		return
 	}
 	log.Warn().Str("wname", w.name).Msg("Quit worker due to poor health")

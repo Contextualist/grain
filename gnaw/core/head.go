@@ -107,14 +107,14 @@ func (w *Remote) sendLoop() {
 // pass on the result or request a retry; notify resource management
 func (w *Remote) recvLoop() {
 	defer func() { close(w.recvQuit) }()
-	var trafficFlag uint64
+	var trafficFlag atomic.Bool
 	go func() {
 		t := time.NewTicker(HEARTBEAT_INTERVAL * HEARTBEAT_TOLERANCE)
 		defer t.Stop()
 		for {
 			select {
 			case <-t.C:
-				if atomic.CompareAndSwapUint64(&trafficFlag, 1, 0) {
+				if trafficFlag.CompareAndSwap(true, false) {
 					continue
 				}
 				log.Warn().Str("wname", w.name).Msg("Remote.recvLoop: heartbeat response timeout")
@@ -135,7 +135,7 @@ func (w *Remote) recvLoop() {
 			}
 			return
 		}
-		atomic.StoreUint64(&trafficFlag, 1)
+		trafficFlag.Store(true)
 		if r.Tid == 0 { // assume to be heartbeat response
 			continue
 		}
