@@ -2,12 +2,20 @@ package core
 
 import (
 	"net"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/rs/zerolog/log"
 	"github.com/tinylib/msgp/msgp"
+)
+
+const (
+	FULL_HEALTH         = 3
+	HEARTBEAT_INTERVAL  = 10 * time.Second
+	HEARTBEAT_TOLERANCE = 3
 )
 
 type (
@@ -161,6 +169,149 @@ func (w *RemoteBase) getPending() *pendingTaskMap { return w.pending }
 func (w *RemoteBase) getInput() chan Task         { return w.chInput }
 func (w *RemoteBase) isClosing() bool             { return w.closing.Load() }
 func (w *RemoteBase) setClosing()                 { w.closing.Store(true) }
+
+type (
+	// A Remote sends functions to its worker and watch for their results
+	Remote struct {
+		*RemoteBase
+
+		mu       sync.Mutex
+		conn     net.Conn
+		receiver *msgp.Reader
+	}
+)
+
+func newRemote(name string, res Resource, mgr ResourceManager, retryq chan<- Task, resultq chan<- ResultMsg, conn net.Conn, rcv *msgp.Reader) *Remote {
+	base := newRemoteBase(name, res, mgr, retryq, resultq)
+	return &Remote{
+		RemoteBase: base,
+		conn:       conn,
+		receiver:   rcv,
+	}
+}
+
+func (w *Remote) sendLoop() {
+	defer func() { close(w.sendQuit) }()
+	sender := msgp.NewWriter(w.conn)
+	go func() {
+		t := time.NewTicker(HEARTBEAT_INTERVAL)
+		defer t.Stop()
+		for {
+			select {
+			case <-t.C:
+				w.mu.Lock()
+				_ = (&ControlMsg{Cmd: "HBT"}).EncodeMsg(sender)
+				_ = sender.Flush()
+				w.mu.Unlock()
+			case <-w.recvQuit: // heartbeat is still needed after closeSend
+				return
+			}
+		}
+	}()
+	// Buffered channel `w.chInput` for:
+	// 1. Relieving outbound network backpressure
+	// 2. Reducing lock contention
+	for t := range w.chInput {
+		w.predispatch(t)
+
+		w.mu.Lock()
+		err := (&FnMsg{t.id, resToMsg(t.res), t.rawFn}).EncodeMsg(sender)
+		if err != nil {
+			w.health_dec(FULL_HEALTH)
+			w.mu.Unlock()
+			return
+		}
+		err = sender.Flush()
+		if err != nil {
+			w.health_dec(FULL_HEALTH)
+			w.mu.Unlock()
+			return
+		}
+		w.mu.Unlock()
+	}
+}
+
+// pass on the result or request a retry; notify resource management
+func (w *Remote) recvLoop() {
+	defer func() { close(w.recvQuit) }()
+	var trafficFlag atomic.Bool
+	go func() {
+		t := time.NewTicker(HEARTBEAT_INTERVAL * HEARTBEAT_TOLERANCE)
+		defer t.Stop()
+		for {
+			select {
+			case <-t.C:
+				if trafficFlag.CompareAndSwap(true, false) {
+					continue
+				}
+				log.Warn().Str("wname", w.name).Msg("Remote.recvLoop: heartbeat response timeout")
+				w.health_dec(FULL_HEALTH)
+				return
+			case <-w.recvQuit:
+				return
+			}
+		}
+	}()
+	for {
+		var r ResultMsg
+		err := r.DecodeMsg(w.receiver)
+		if err != nil {
+			if !w.isClosing() {
+				log.Error().Str("wname", w.name).Err(err).Msg("Remote.recvLoop: read error")
+				w.health_dec(FULL_HEALTH)
+			}
+			return
+		}
+		trafficFlag.Store(true)
+		if r.Tid == 0 { // assume to be heartbeat response
+			continue
+		}
+
+		w.postreceive(r)
+	}
+}
+
+// request worker to cancel certain running tasks; those tasks will return a UserCancelled status and not be resubmitted
+func (w *Remote) batchCancel(pred taskPredicateFn) {
+	w.pending.mu.Lock()
+	var tids []string
+	for tid := range w.pending.m {
+		if !pred(tid) {
+			tids = append(tids, strconv.Itoa(int(tid)))
+		}
+	}
+	w.pending.mu.Unlock()
+	if len(tids) == 0 {
+		return
+	}
+	tidsStr := strings.Join(tids, ",")
+
+	can, _ := (&ControlMsg{Cmd: "CAN", Name: &tidsStr}).MarshalMsg(nil)
+	w.mu.Lock()
+	_, _ = w.conn.Write(can)
+	w.mu.Unlock()
+}
+
+func (w *Remote) close() {
+	// assume that w.chInput will not be passed in data during and after
+	// this function call
+	w.setClosing()
+	bye, _ := (&ControlMsg{Cmd: "FIN"}).MarshalMsg(nil)
+	w.mu.Lock()
+	_, _ = w.conn.Write(bye)
+	w.mu.Unlock()
+
+	w.closeSend()
+	select {
+	case <-w.recvQuit:
+	case <-time.After(HEARTBEAT_INTERVAL * HEARTBEAT_TOLERANCE):
+	}
+	w.mu.Lock()
+	_ = w.conn.Close()
+	w.mu.Unlock()
+	// migrate all pending tasks once the pending gets stable
+	w.ejectPending()
+}
 
 type (
 	SpecializedRemote struct {
