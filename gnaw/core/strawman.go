@@ -1,12 +1,13 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"math"
 	"os/exec"
 	"os/user"
 	"regexp"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -136,22 +137,8 @@ func sortJobByTTL(m map[string]hpcJobState) []hpcJobState {
 	for _, job := range m {
 		s = append(s, job)
 	}
-	sort.Slice(s, func(i, j int) bool { return s[i].timeLimit-s[i].timeElapsed < s[j].timeLimit-s[j].timeElapsed })
+	slices.SortFunc(s, func(a, b hpcJobState) int { return cmp.Compare(a.timeLimit-a.timeElapsed, b.timeLimit-b.timeElapsed) })
 	return s
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 // parse a time str into a duration in seconds

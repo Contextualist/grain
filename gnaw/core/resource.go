@@ -6,7 +6,7 @@ package core
 import (
 	"fmt"
 	"math"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -290,7 +290,7 @@ func (m *multiResource) String() string {
 	for k := range m.resm {
 		names = append(names, k)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	var b strings.Builder
 	b.WriteString(m.resm[names[0]].String())
 	for _, k := range names[1:] {
