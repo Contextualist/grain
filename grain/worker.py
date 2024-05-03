@@ -3,9 +3,12 @@ import trio
 import traceback
 import argparse
 import time
-from io import StringIO
 import json
 from math import inf as INFIN
+try:
+    from exceptiongroup import BaseExceptionGroup  # for Python < 3.11
+except ImportError:
+    pass
 import logging
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -27,10 +30,8 @@ async def exerf(tid, res, func, so):
     except BaseException as e:
         if cs_pool.pop(tid, None) is None:
             e = UserCancelled() # task indicated as no longer needed; to be discarded
-        elif type(e) is trio.Cancelled:
-            e = WorkerCancelled() # worker going to quit; task to be resubmitted
-        elif type(e) is trio.MultiError:
-            e = trio.MultiError.filter((lambda e_: WorkerCancelled() if type(e_) is trio.Cancelled else e_), e)
+        else:
+            e = map_exc(e, (lambda e_: WorkerCancelled() if type(e_) is trio.Cancelled else e_))
         exception, r = e.__class__.__name__, (traceback.format_exc(), e)
     finally:
         with trio.move_on_after(3) as cleanup_scope:
@@ -121,6 +122,11 @@ class WorkerCancelled(BaseException):
 class UserCancelled(BaseException):
     def __str__(self):
         return "Cancelled"
+
+def map_exc(e, fn):
+    if isinstance(e, BaseExceptionGroup):
+        return BaseExceptionGroup(e.message, [map_exc(e_, fn) for e_ in e.exceptions])
+    return fn(e)
 
 if __name__ == "__main__":
     argp = argparse.ArgumentParser(description="Worker instance for Grain")

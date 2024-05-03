@@ -38,7 +38,7 @@ setuptools.setup(
     packages=setuptools.find_packages(),
     python_requires=">=3.8",
     install_requires=[
-        "trio >= 0.20.0",
+        "trio >= 0.22.0",
         "dill >= 0.3.2",
         "msgpack",
         "tomli >= 1.1.0 ; python_version < '3.11'",
