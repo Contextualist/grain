@@ -5,6 +5,10 @@ from .config import load_conf
 import pytest
 import trio
 from trio.testing import MockClock
+try:
+    from exceptiongroup import ExceptionGroup  # for Python < 3.11
+except ImportError:
+    pass
 
 from functools import partial
 from io import StringIO
@@ -39,14 +43,16 @@ async def temporary_err_task():
     raise Temporary
 
 def test_local_critical():
-    with pytest.raises(RuntimeError, match="local worker quit"), \
+    with pytest.raises(ExceptionGroup) as excinfo, \
          GrainExecutor() as exer:
         exer.submit(ZERO, critical_err_task)
+    assert excinfo.group_contains(RuntimeError, match="local worker quit")
 
 def test_local_lastjob_retry():
-    with pytest.raises(RuntimeError, match="local worker quit"), \
+    with pytest.raises(ExceptionGroup) as excinfo, \
          GrainExecutor(temporary_err=(Temporary,)) as exer:
         exer.submit(ZERO, temporary_err_task)
+    assert excinfo.group_contains(RuntimeError, match="local worker quit")
     assert trial == FULL_HEALTH
 
 

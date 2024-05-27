@@ -4,6 +4,10 @@ from .contextvar import GVAR
 
 import pytest
 import trio
+try:
+    from exceptiongroup import ExceptionGroup  # for Python < 3.11
+except ImportError:
+    pass
 
 from functools import partial
 
@@ -87,8 +91,9 @@ async def _main_subtask(i):
     if i == 1:
         raise Critical
 def test_main_subtask_exception():
-    with pytest.raises(Critical):
+    with pytest.raises(ExceptionGroup) as excinfo:
         run([partial(_main_subtask, i) for i in range(10)], [], ZERO)
+    assert excinfo.group_contains(Critical)
 
 
 async def _top_serial():
