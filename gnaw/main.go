@@ -296,7 +296,7 @@ func main() {
 
 	MAX_DOCKS = *maxdocks
 	docksAvail = make(chan uint, MAX_DOCKS)
-	for i := uint(0); i < MAX_DOCKS; i++ {
+	for i := range MAX_DOCKS {
 		docksAvail <- i
 	}
 
