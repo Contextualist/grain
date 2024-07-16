@@ -55,7 +55,7 @@ async def test_numpy():
 
     # __setitem__ on NumPy does not pass back control
     a = np.arange(3)
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         a[[0,1]] += delayedval(np.array([8,9]))
 
 async def _await(r_):
